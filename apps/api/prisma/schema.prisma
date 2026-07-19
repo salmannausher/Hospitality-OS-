@@ -12,9 +12,16 @@ generator client {
 // Prisma 7 moved connection config out of the schema file entirely — see
 // prisma.config.ts alongside this file. This datasource block is now pure
 // structure: provider + extension declaration, no url.
+//
+// Supabase's own platform automatically installs pgcrypto, pg_stat_statements,
+// supabase_vault, and uuid-ossp on every project regardless of what we
+// migrate — declaring only `vector` here made Prisma treat Supabase's own
+// extensions as unexpected drift on every `migrate dev`/`reset`. All five
+// are declared so Prisma's schema comparison expects exactly what Supabase
+// actually provisions, discovered while running the real first migration.
 datasource db {
   provider   = "postgresql"
-  extensions = [vector]
+  extensions = [vector, pgcrypto, pg_stat_statements, uuid_ossp(map: "uuid-ossp"), supabase_vault(schema: "vault")]
 }
 
 // =========================================================================

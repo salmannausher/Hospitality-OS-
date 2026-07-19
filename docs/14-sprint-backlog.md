@@ -37,16 +37,15 @@ Every box above, regardless of sprint, isn't checked until:
 
 **Definition of done:** a "hello world" NestJS route runs as a single Vercel Function, RLS is proven to actually block a cross-tenant read, and the monorepo is scaffolded — nothing product-shaped yet, on purpose ([Development Plan §1](11-development-plan.md)).
 
-- [ ] Provision Supabase project — Postgres with the `pgvector` extension enabled
+- [x] Provision Supabase project — Postgres with the `pgvector` extension enabled
 - [ ] Provision Upstash Redis instance
-- [ ] Provision Vercel project (Hobby tier is fine pre-launch — [Architecture §8](06-system-architecture.md))
+- [ ] Provision Vercel project (Hobby tier is fine pre-launch — [Architecture §8](06-system-architecture.md)) — Vercel CLI already authenticated locally, not yet linked to an actual project
 - [ ] Obtain AI Gateway access and a Voyage AI API key
 - [ ] **Confirm Voyage AI's actual embedding output dimension** before writing the first migration — `vector(1024)` in the schema docs is a placeholder that must match whichever model is actually picked ([DB §5](07-database-design.md))
-- [x] **Spike:** get NestJS running behind a single Vercel Function — resolved via Vercel's own current docs: zero-config, no custom adapter (Architecture §3, corrected). `apps/api/src/main.ts` already matches the required entrypoint convention exactly. Live deploy test still pending an actual linked Vercel project (see below).
+- [x] **Spike:** get NestJS running behind a single Vercel Function — resolved via Vercel's own current docs: zero-config, no custom adapter (Architecture §3, corrected). `apps/api/src/main.ts` already matches the required entrypoint convention exactly. Live deploy test still pending an actual linked Vercel project (see above).
 - [x] Scaffold the monorepo: `apps/web` (Next.js 16), `apps/api` (NestJS 11), `packages/{ui,types,prompts,sdk,config}` ([Engineering Conventions §2](12-engineering-conventions.md)) — `pnpm install` clean across all 7 workspace packages
-- [x] Prisma schema written in full (`apps/api/prisma/schema.prisma`, transcribed from [DB Design](07-database-design.md)) and validated (`prisma validate`, `prisma generate` both pass). RLS policies for every tenant-scoped table written as a ready-to-apply migration (`apps/api/prisma/rls-policies.sql`) — **not yet applied**, since that needs a real `DATABASE_URL` (see below).
-- [ ] Run the actual migration + RLS policies against a real Supabase Postgres instance once provisioned
-- [ ] Adversarial test: create two hotels, confirm a session scoped to Hotel A cannot read a single row belonging to Hotel B
+- [x] Prisma schema written in full (`apps/api/prisma/schema.prisma`, transcribed from [DB Design](07-database-design.md)), validated, and **applied to the live Supabase project** — three tracked migrations (`0_init`, `1_rls_policies`, `2_app_role`), `prisma migrate status` clean.
+- [x] Adversarial test: two hotels created directly, a session connected as the restricted `app_role` and scoped to Hotel A queried both `Hotel` and `RoomType` — Hotel B's rows were completely absent from both result sets. **PASS.** Discovered along the way that this required a genuinely separate, non-owning Postgres role (`app_role`) — RLS policies alone do nothing against the migration-owning role, since Postgres table owners bypass RLS by default. Documented in [DB §9](07-database-design.md).
 - [x] Set up Git workflow — `main`/`develop`/`feature/*`, PR-only merges even solo ([Engineering Conventions §8](12-engineering-conventions.md))
 - [x] Configure ESLint + Prettier, Husky pre-commit hook (lint + typecheck), Commitlint ([Engineering Conventions §8](12-engineering-conventions.md))
 

@@ -514,6 +514,8 @@ CREATE POLICY tenant_isolation ON "Chunk"
 
 The application sets `app.hotel_id` as a session variable at the start of every request, using the value resolved in [Architecture §6](06-system-architecture.md) (from the widget key for guest traffic, from the authenticated membership for admin traffic) — this is the mechanism, not just the policy declaration, that makes it structurally impossible for a forgotten `WHERE hotelId = ...` in application code to leak cross-tenant rows.
 
+**The policies above do nothing if the application connects as the table owner.** Discovered running Sprint 0's adversarial RLS test ([Sprint Backlog](14-sprint-backlog.md)), not something this document originally called out: Postgres table owners bypass row-level security by default, regardless of how many policies exist, unless `FORCE ROW LEVEL SECURITY` is set — and the role that runs migrations necessarily owns every table it creates. The fix is a second, deliberately restricted role (`app_role`: `NOSUPERUSER NOBYPASSRLS`, granted only `SELECT/INSERT/UPDATE/DELETE` on the schema, never ownership) that the *application* connects as at runtime — migrations still run as the owning role. This is now its own tracked migration (`2_app_role`), applied alongside the RLS policies (`1_rls_policies`) rather than left as an unstated assumption. The adversarial test — two hotels, a session scoped to Hotel A querying as `app_role` — confirmed Hotel B's rows are completely invisible only once this separation was in place; using the owning role for the same test would have silently passed for the wrong reason (no RLS bypass check at all, not genuine isolation).
+
 ## 10. Conversations, Leads, Escalations
 
 ```prisma

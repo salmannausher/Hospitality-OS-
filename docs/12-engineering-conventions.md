@@ -93,7 +93,8 @@ Extending [Architecture §9](06-system-architecture.md)'s per-turn conversation 
 ## 7. Environment Variables
 
 ```
-DATABASE_URL=
+DATABASE_URL=                # app_role, pooled (port 6543) — runtime queries, RLS-restricted (DB §9)
+DIRECT_URL=                  # postgres role, session pooler (port 5432) — migrations only
 SUPABASE_URL=
 SUPABASE_SERVICE_KEY=
 AI_GATEWAY_API_KEY=          # Claude + fallback routing — Architecture §7

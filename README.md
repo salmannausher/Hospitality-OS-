@@ -27,7 +27,7 @@ pnpm install
 pnpm --filter api exec prisma generate
 ```
 
-`apps/api/prisma/rls-policies.sql` documents the row-level security policies to apply after the first `prisma migrate dev` — see the comment at the top of that file for the exact commands.
+RLS policies and the restricted `app_role` runtime role are tracked as real migrations (`apps/api/prisma/migrations/1_rls_policies`, `2_app_role`) — applied already against the live Supabase project. See [docs/07 §9](docs/07-database-design.md) for why the application must connect as `app_role`, never the migration-owning `postgres` role: table owners bypass RLS by default in Postgres, regardless of what policies exist.
 
 ## Where things actually are
 
