@@ -1,0 +1,757 @@
+// Hospitality AI OS — Prisma schema
+// Transcribed directly from docs/07-database-design.md — see that document for the
+// reasoning behind every non-obvious choice (pgvector over a dedicated vector DB,
+// soft delete, denormalized hotelId, no polymorphic relations, no password field).
+// Do not add anything here that isn't already decided there.
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+// Prisma 7 moved connection config out of the schema file entirely — see
+// prisma.config.ts alongside this file. This datasource block is now pure
+// structure: provider + extension declaration, no url.
+datasource db {
+  provider   = "postgresql"
+  extensions = [vector]
+}
+
+// =========================================================================
+// §3 — Access & Tenancy
+// =========================================================================
+
+model Organization {
+  id        String   @id @default(cuid())
+  name      String // e.g. "Spherical"
+  createdAt DateTime @default(now())
+
+  hotels      Hotel[]
+  memberships OrganizationMembership[]
+}
+
+model Hotel {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  name           String
+  slug           String       @unique
+  createdAt      DateTime     @default(now())
+
+  brandSettings        BrandSettings?
+  promptOverrides      PromptOverride[]
+  propertyProfile      PropertyProfile?
+  widgetKeys           WidgetKey[]
+  memberships          HotelMembership[]
+  documents            Document[]
+  chunks               Chunk[]
+  entityRelationships  EntityRelationship[]
+  roomTypes            RoomType[]
+  packages             Package[]
+  restaurants          Restaurant[]
+  spaTreatments        SpaTreatment[]
+  amenities            Amenity[]
+  policies             Policy[]
+  localRecommendations LocalRecommendation[]
+  eventSpaces          EventSpace[]
+  experiences          Experience[]
+  conversations        Conversation[]
+  leads                Lead[]
+  playbookScenarios    PlaybookScenario[]
+  auditLogs            AuditLog[]
+  notifications        Notification[]
+  integrations         Integration[]
+  subscription         Subscription?
+  dailyMetrics         DailyMetric[]
+
+  @@index([organizationId])
+}
+
+enum Role {
+  SUPER_ADMIN
+  AGENCY_ADMIN
+  HOTEL_ADMIN
+  MARKETING
+  RESERVATIONS
+  VIEWER
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  createdAt DateTime @default(now())
+
+  organizationMemberships OrganizationMembership[]
+  hotelMemberships        HotelMembership[]
+}
+
+/// Grants access across every hotel under an org (Agency Admin / Super Admin) — PRD §16
+model OrganizationMembership {
+  id             String       @id @default(cuid())
+  userId         String
+  organizationId String
+  role           Role
+  user           User         @relation(fields: [userId], references: [id])
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
+  @@unique([userId, organizationId])
+}
+
+/// Grants access to exactly one hotel (Hotel Admin / Marketing / Reservations / Viewer) — PRD §16
+model HotelMembership {
+  id      String @id @default(cuid())
+  userId  String
+  hotelId String
+  role    Role
+  user    User   @relation(fields: [userId], references: [id])
+  hotel   Hotel  @relation(fields: [hotelId], references: [id])
+
+  @@unique([userId, hotelId])
+  @@index([hotelId])
+}
+
+/// Public, scoped identifier used to resolve hotel_id from the guest widget — Architecture §6.
+/// The chat API never trusts a client-supplied hotel id; it looks it up from this key instead.
+model WidgetKey {
+  id        String   @id @default(cuid())
+  hotelId   String
+  key       String   @unique
+  revoked   Boolean  @default(false)
+  createdAt DateTime @default(now())
+  hotel     Hotel    @relation(fields: [hotelId], references: [id])
+
+  @@index([hotelId])
+}
+
+// =========================================================================
+// §4 — Brand & Prompt Configuration
+// =========================================================================
+
+enum TonePreset {
+  CLASSIC_LUXURY
+  MODERN_LUXURY
+  BOUTIQUE
+  FAMILY_FRIENDLY
+}
+
+/// ABS §2 — per-hotel persona config. Every field here is a template variable in the
+/// system prompt (ABS §14), not decorative admin-panel content.
+model BrandSettings {
+  id      String @id @default(cuid())
+  hotelId String @unique
+  hotel   Hotel  @relation(fields: [hotelId], references: [id])
+
+  conciergeName  String // ABS §2 avatar name
+  tonePreset     TonePreset @default(MODERN_LUXURY)
+  formalityNote  String? // free-text override beyond the preset
+  emojiAllowed   Boolean    @default(false)
+  signOff        String?
+  greeting       String // Welcome message — PRD FR-001 / Playbook G-00
+  logoUrl        String?
+  primaryColor   String?
+  secondaryColor String?
+  fontFamily     String?
+
+  updatedAt DateTime @updatedAt
+}
+
+/// Read-mostly, edit-guarded escape hatch beyond the generated prompt (ABS §14) — most hotels
+/// never touch this; it exists for the rare bespoke case the template can't express.
+/// Versioned rather than a single row per hotel: exactly one `active` version is live at a
+/// time, so a prompt change can be drafted, previewed, and rolled back without losing the
+/// previous working version — the same reasoning as never hard-deleting a knowledge document.
+model PromptOverride {
+  id           String   @id @default(cuid())
+  hotelId      String
+  hotel        Hotel    @relation(fields: [hotelId], references: [id])
+  name         String // e.g. "v2 - warmer tone", admin-facing label
+  overrideText String
+  model        String? // AI Gateway "provider/model" string, Architecture §7
+  temperature  Float?
+  active       Boolean  @default(false)
+  updatedBy    String
+  updatedAt    DateTime @updatedAt
+
+  @@index([hotelId, active])
+}
+
+// =========================================================================
+// §5 — Knowledge Base: Documents, Ingestion, Chunks
+// =========================================================================
+
+enum DocumentSourceType {
+  PDF
+  DOCX
+  TEXT
+  URL
+}
+
+enum DocumentStatus {
+  PARSING
+  NEEDS_REVIEW
+  FAILED
+  INDEXED
+}
+
+model Document {
+  id           String             @id @default(cuid())
+  hotelId      String
+  hotel        Hotel              @relation(fields: [hotelId], references: [id])
+  filename     String
+  sourceType   DocumentSourceType
+  storageUrl   String
+  status       DocumentStatus     @default(PARSING)
+  sourceUrl    String? // for URL-synced content, IA §4
+  lastSyncedAt DateTime?
+  uploadedAt   DateTime           @default(now())
+  deletedAt    DateTime? // soft delete — see §1
+
+  chunks        Chunk[]
+  ingestionJobs IngestionJob[]
+
+  @@index([hotelId, status])
+}
+
+enum IngestionStage {
+  PARSING
+  EXTRACTING
+  CHUNKING
+  TAGGING
+  EMBEDDING
+  VALIDATING
+}
+
+enum JobStatus {
+  QUEUED
+  RUNNING
+  SUCCEEDED
+  FAILED
+}
+
+/// Architecture §5 — one row per stage attempt, so a failed upload is diagnosable
+/// ("embedding failed" vs "parsing failed") without re-running the whole pipeline blind.
+model IngestionJob {
+  id          String         @id @default(cuid())
+  hotelId     String
+  documentId  String
+  document    Document       @relation(fields: [documentId], references: [id])
+  stage       IngestionStage
+  status      JobStatus      @default(QUEUED)
+  error       String?
+  startedAt   DateTime?
+  completedAt DateTime?
+
+  @@index([hotelId])
+  @@index([documentId])
+}
+
+enum Priority {
+  HIGH
+  NORMAL
+  LOW
+}
+
+/// IA §6 — the retrievable unit. `embedding` uses Prisma's Unsupported() escape hatch since
+/// Prisma has no native pgvector type — see docs/07-database-design.md §8 for the raw-SQL
+/// migration this requires (HNSW index, hotel-scoped).
+model Chunk {
+  id             String                      @id @default(cuid())
+  hotelId        String
+  hotel          Hotel                       @relation(fields: [hotelId], references: [id])
+  documentId     String
+  document       Document                    @relation(fields: [documentId], references: [id])
+  domainTags     String[] // IA §2 taxonomy values
+  sourceType     DocumentSourceType
+  language       String                      @default("en")
+  priority       Priority                    @default(NORMAL)
+  lastVerifiedAt DateTime                    @default(now()) // drives staleness, IA §9
+  content        String
+  tokenCount     Int? // precomputed for context-window budgeting at generation time (ABS §14)
+  embedding      Unsupported("vector(1024)")
+
+  @@index([hotelId, priority])
+}
+
+// =========================================================================
+// §6 — Structured Entities (IA §3)
+// Nine tables, one per entity type — real relational tables, not one polymorphic
+// JSON blob, because the Recommendation Engine needs to filter on typed fields.
+// =========================================================================
+
+model RoomType {
+  id           String    @id @default(cuid())
+  hotelId      String
+  hotel        Hotel     @relation(fields: [hotelId], references: [id])
+  name         String
+  view         String?
+  capacity     Int
+  bedConfig    String?
+  accessible   Boolean   @default(false)
+  baseRateLow  Decimal?
+  baseRateHigh Decimal?
+  deletedAt    DateTime?
+
+  @@index([hotelId])
+}
+
+model Package {
+  id            String    @id @default(cuid())
+  hotelId       String
+  hotel         Hotel     @relation(fields: [hotelId], references: [id])
+  name          String
+  includedItems String[]
+  validFrom     DateTime?
+  validTo       DateTime?
+  priceLow      Decimal?
+  priceHigh     Decimal?
+  roomTypeIds   String[] // loose reference — no polymorphic relations, see docs/07 §8
+  deletedAt     DateTime?
+
+  @@index([hotelId])
+}
+
+model Restaurant {
+  id                String    @id @default(cuid())
+  hotelId           String
+  hotel             Hotel     @relation(fields: [hotelId], references: [id])
+  name              String
+  cuisine           String?
+  hours             String?
+  dressCode         String?
+  dietaryTags       String[]
+  reservationPolicy String?
+  deletedAt         DateTime?
+
+  @@index([hotelId])
+}
+
+model SpaTreatment {
+  id           String    @id @default(cuid())
+  hotelId      String
+  hotel        Hotel     @relation(fields: [hotelId], references: [id])
+  name         String
+  durationMins Int?
+  price        Decimal?
+  facility     String?
+  deletedAt    DateTime?
+
+  @@index([hotelId])
+}
+
+model Amenity {
+  id         String    @id @default(cuid())
+  hotelId    String
+  hotel      Hotel     @relation(fields: [hotelId], references: [id])
+  name       String
+  hours      String?
+  location   String?
+  accessRule String?
+  deletedAt  DateTime?
+
+  @@index([hotelId])
+}
+
+model Policy {
+  id         String    @id @default(cuid())
+  hotelId    String
+  hotel      Hotel     @relation(fields: [hotelId], references: [id])
+  topic      String // "pets" | "cancellation" | ... — IA §3
+  ruleText   String
+  exceptions String?
+  deletedAt  DateTime?
+
+  @@index([hotelId, topic])
+}
+
+model LocalRecommendation {
+  id           String    @id @default(cuid())
+  hotelId      String
+  hotel        Hotel     @relation(fields: [hotelId], references: [id])
+  name         String
+  category     String?
+  distanceNote String?
+  curationNote String?
+  deletedAt    DateTime?
+
+  @@index([hotelId])
+}
+
+model EventSpace {
+  id              String    @id @default(cuid())
+  hotelId         String
+  hotel           Hotel     @relation(fields: [hotelId], references: [id])
+  name            String
+  capacity        Int?
+  layoutOptions   String[]
+  avEquipment     String[]
+  cateringMinimum Decimal?
+  deletedAt       DateTime?
+
+  @@index([hotelId])
+}
+
+model Experience {
+  id             String    @id @default(cuid())
+  hotelId        String
+  hotel          Hotel     @relation(fields: [hotelId], references: [id])
+  name           String
+  category       String? // on-site | off-site — IA §3
+  durationMins   Int?
+  price          Decimal?
+  bookingLeadHrs Int?
+  ageRestriction String?
+  deletedAt      DateTime?
+
+  @@index([hotelId])
+}
+
+/// Singleton per hotel — IA §3. About/brand story/awards content, PLUS a small set of
+/// "quick facts" that get injected into the system prompt unconditionally, bypassing
+/// retrieval entirely — see docs/07-database-design.md §6 for the full reasoning.
+model PropertyProfile {
+  id          String   @id @default(cuid())
+  hotelId     String   @unique
+  hotel       Hotel    @relation(fields: [hotelId], references: [id])
+  brandStory  String?
+  history     String?
+  location    String?
+  contactInfo String?
+  galleryRefs String[]
+  awards      String[]
+
+  // Quick facts — always-inject, never retrieved
+  checkInTime         String?
+  checkOutTime        String?
+  petFriendly         Boolean?
+  starRating          Int?
+  airportDistanceNote String?
+  quickFactAmenities  String[] // short glance-list; full detail still lives in Amenity rows
+}
+
+// =========================================================================
+// §7 — Relationship Layer (IA §12)
+// =========================================================================
+
+enum EntityType {
+  ROOM_TYPE
+  PACKAGE
+  RESTAURANT
+  SPA_TREATMENT
+  AMENITY
+  POLICY
+  LOCAL_RECOMMENDATION
+  EVENT_SPACE
+  EXPERIENCE
+  PROPERTY_PROFILE
+}
+
+/// IA §12 — curated edges between entities (the "Hotel Knowledge Graph, lightweight V1").
+/// fromEntityId/toEntityId carry no FK constraint — no polymorphic relations in Prisma,
+/// validated at the application layer instead. See docs/07-database-design.md §8.
+model EntityRelationship {
+  id               String     @id @default(cuid())
+  hotelId          String
+  hotel            Hotel      @relation(fields: [hotelId], references: [id])
+  fromEntityType   EntityType
+  fromEntityId     String
+  toEntityType     EntityType
+  toEntityId       String
+  relationshipType String // "pairs_with" | "suitable_for" | "near"
+  contextTag       String // "anniversary" | "family" | "honeymoon" ...
+  priority         Priority   @default(NORMAL)
+
+  @@index([hotelId, contextTag])
+}
+
+// =========================================================================
+// §10 — Conversations, Leads, Escalations
+// =========================================================================
+
+/// Lowercase values, deliberately — matching the wire/prompt-facing form used
+/// everywhere else this concept appears (ABS §16, Playbook §2, API §2.1, AI Engine §2),
+/// not Prisma's usual UPPER_SNAKE_CASE convention. Every other enum in this schema
+/// stays uppercase; this is the one deliberate exception.
+enum JourneyState {
+  information
+  planning
+  booking_intent
+  service_recovery
+}
+
+enum ConfidenceBand {
+  HIGH
+  MEDIUM
+  LOW
+}
+
+enum ConversationStatus {
+  ACTIVE
+  ESCALATED
+  CLOSED
+}
+
+/// guestSessionId is deliberately the only guest identifier here, and deliberately
+/// session-scoped rather than a longer-lived visitorId/device fingerprint — see
+/// docs/07-database-design.md §10 for why that's a privacy boundary, not an oversight.
+model Conversation {
+  id             String             @id @default(cuid())
+  hotelId        String
+  hotel          Hotel              @relation(fields: [hotelId], references: [id])
+  guestSessionId String // anonymous, session-scoped — no guest account (ABS §11)
+  status         ConversationStatus @default(ACTIVE)
+  startedAt      DateTime           @default(now())
+  endedAt        DateTime?
+
+  messages    Message[]
+  leads       Lead[]
+  escalations Escalation[]
+  qaScore     QAScore?
+
+  @@index([hotelId, startedAt])
+}
+
+enum MessageRole {
+  GUEST
+  CONCIERGE
+}
+
+/// Architecture §4 step 9 — every field here is what powers the Analytics "Missing
+/// Information" panel (UX §12) and the QA Rubric (ABS §15), not just chat history.
+model Message {
+  id                   String          @id @default(cuid())
+  hotelId              String
+  conversationId       String
+  conversation         Conversation    @relation(fields: [conversationId], references: [id])
+  role                 MessageRole
+  content              String
+  journeyState         JourneyState? // set on concierge turns only
+  domainTags           String[]
+  confidenceBand       ConfidenceBand?
+  escalationTriggered  Boolean         @default(false)
+  leadCaptureTriggered Boolean         @default(false)
+  createdAt            DateTime        @default(now())
+
+  @@index([hotelId])
+  @@index([conversationId, createdAt])
+}
+
+enum LeadStatus {
+  NEW
+  CONTACTED
+  QUALIFIED
+  CONVERTED
+  LOST
+}
+
+/// Fields mirror PRD FR-007 in full — this is the available menu, not a checklist to fill
+/// every time. UX §4 caps what's actually asked for in a single conversation at 2-3 fields.
+model Lead {
+  id              String        @id @default(cuid())
+  hotelId         String
+  hotel           Hotel         @relation(fields: [hotelId], references: [id])
+  conversationId  String?
+  conversation    Conversation? @relation(fields: [conversationId], references: [id])
+  name            String?
+  email           String?
+  phone           String?
+  travelDates     String?
+  budget          String?
+  guestCount      Int?
+  reasonForStay   String?
+  preferredRoom   String?
+  consentGiven    Boolean       @default(false)
+  status          LeadStatus    @default(NEW)
+  leadScore       Int? // 0-100, drives the Conversations list triage view (UX §11)
+  assignedOwnerId String?
+  notes           String?
+  createdAt       DateTime      @default(now())
+  deletedAt       DateTime?
+
+  @@index([hotelId, status])
+}
+
+/// ABS §7 — one row per handoff, so escalation-reason analytics (PRD FR-010) are a
+/// group-by on a structured tag, not a text search over transcripts.
+model Escalation {
+  id             String       @id @default(cuid())
+  hotelId        String
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id])
+  reason         String // structured tag, ABS §7 — never free text
+  triggeredAt    DateTime     @default(now())
+  resolvedAt     DateTime?
+  handledBy      String?
+
+  @@index([hotelId, reason])
+}
+
+// =========================================================================
+// §11 — QA & Playbook
+// =========================================================================
+
+/// ABS §15 — one score per conversation at v1; could move to per-message grain later.
+model QAScore {
+  id             String       @id @default(cuid())
+  hotelId        String
+  conversationId String       @unique
+  conversation   Conversation @relation(fields: [conversationId], references: [id])
+  grounding      Int
+  tone           Int
+  escalation     Int
+  leadCapture    Int
+  resolution     Int
+  scoredBy       String
+  scoredAt       DateTime     @default(now())
+
+  @@index([hotelId])
+}
+
+enum ScenarioSource {
+  HAND_WRITTEN
+  PILOT_TRANSCRIPT
+}
+
+/// Playbook §2 schema, persisted directly — hotelId null for the global v1 scenarios,
+/// set when a scenario was flagged from a specific hotel's real transcript. This table
+/// *is* the eval schema — deliberately no separate eval data model (Architecture §9).
+model PlaybookScenario {
+  id                   String         @id @default(cuid())
+  hotelId              String?
+  hotel                Hotel?         @relation(fields: [hotelId], references: [id])
+  domain               String?
+  journeyState         JourneyState
+  persona              String?
+  guestMessage         String
+  expectedBehavior     String[]
+  escalationExpected   Boolean        @default(false)
+  leadCaptureExpected  Boolean        @default(false)
+  mustNot              String[]
+  source               ScenarioSource @default(HAND_WRITTEN)
+  sourceConversationId String?
+
+  @@index([hotelId, journeyState])
+}
+
+// =========================================================================
+// §13 — Operational Tables: Audit, Notifications, Integrations, Billing, Metrics
+// =========================================================================
+
+/// Architecture §10 said brand/prompt/knowledge changes get audit-logged — this is that
+/// table. One row per mutating admin action, never deleted (append-only).
+model AuditLog {
+  id         String   @id @default(cuid())
+  hotelId    String? // null for org-level actions
+  hotel      Hotel?   @relation(fields: [hotelId], references: [id])
+  actorId    String // User.id
+  action     String // "document.uploaded" | "prompt.activated" | "brand.updated" | ...
+  entityType String
+  entityId   String
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  @@index([hotelId, createdAt])
+}
+
+enum NotificationType {
+  NEW_LEAD
+  ESCALATION
+  INGESTION_FAILED
+  SYSTEM_ERROR
+  WEEKLY_REPORT
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  FAILED
+  READ
+}
+
+/// PRD §14 lists these five notification types; this is the table that backs them.
+model Notification {
+  id          String             @id @default(cuid())
+  hotelId     String
+  hotel       Hotel              @relation(fields: [hotelId], references: [id])
+  type        NotificationType
+  recipientId String // User.id
+  payload     Json
+  status      NotificationStatus @default(PENDING)
+  createdAt   DateTime           @default(now())
+
+  @@index([hotelId, status])
+}
+
+enum IntegrationProvider {
+  CLOUDBEDS
+  MEWS
+  OPERA
+  SALESFORCE
+  HUBSPOT
+}
+
+enum IntegrationStatus {
+  NOT_CONNECTED
+  CONNECTED
+  ERROR
+}
+
+/// Stubbed now, functional in V2+ (PMS/CRM integration is explicitly out of MVP scope,
+/// PRD §18). apiKey/secretRef here is a reference to a secret in the platform's secret
+/// manager, never a plaintext credential in this table.
+model Integration {
+  id            String              @id @default(cuid())
+  hotelId       String
+  hotel         Hotel               @relation(fields: [hotelId], references: [id])
+  provider      IntegrationProvider
+  status        IntegrationStatus   @default(NOT_CONNECTED)
+  secretRef     String?
+  configuration Json?
+  updatedAt     DateTime            @updatedAt
+
+  @@unique([hotelId, provider])
+}
+
+enum SubscriptionPlan {
+  STARTER
+  PROFESSIONAL
+  ENTERPRISE
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  PAST_DUE
+  CANCELLED
+}
+
+/// Backs the "Billing" admin screen (UX §8). Plan tiers match the productized platform
+/// packaging (Starter/Professional/Enterprise) from the original business-case discussion.
+model Subscription {
+  id          String             @id @default(cuid())
+  hotelId     String             @unique
+  hotel       Hotel              @relation(fields: [hotelId], references: [id])
+  plan        SubscriptionPlan   @default(STARTER)
+  status      SubscriptionStatus @default(ACTIVE)
+  monthlyRate Decimal?
+  startedAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+}
+
+/// Pre-aggregated daily rollup — the Dashboard KPI tiles and Analytics screen read from
+/// this, not from a live COUNT/GROUP BY over Message/Conversation/Lead. Computed once per
+/// hotel per day (batch job or incrementally on write), per the Architecture doc's scaling
+/// note on why recomputing aggregates from raw tables doesn't hold up at scale.
+model DailyMetric {
+  id                 String   @id @default(cuid())
+  hotelId            String
+  hotel              Hotel    @relation(fields: [hotelId], references: [id])
+  date               DateTime // truncated to day
+  messageCount       Int      @default(0)
+  conversationCount  Int      @default(0)
+  bookingIntentCount Int      @default(0)
+  leadCount          Int      @default(0)
+  escalationCount    Int      @default(0)
+  avgSatisfaction    Float?
+
+  @@unique([hotelId, date])
+}
