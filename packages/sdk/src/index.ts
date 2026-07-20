@@ -5,20 +5,43 @@
 //
 // Signatures match docs/09-api-specification.md exactly.
 
-import type { BootstrapResponse, ChatSSEEvent } from "@hospitality/types";
+import type {
+  AdminSessionResponse,
+  BootstrapResponse,
+  ChatSSEEvent,
+} from "@hospitality/types";
 
-// Re-exported so frontend code has one import site for the bootstrap shape.
-export type { BootstrapResponse } from "@hospitality/types";
+// Re-exported so frontend code has one import site for these shapes.
+export type { AdminSessionResponse, BootstrapResponse } from "@hospitality/types";
 
 /** Base URL of the api. Overridable for local dev / preview deploys. */
 const DEFAULT_BASE_URL = "http://localhost:3000";
 
+// Ambient-only — no @types/node dependency needed. Next.js's build-time env
+// inlining requires the literal `process.env.NEXT_PUBLIC_X` member expression
+// to appear verbatim in source (it's a static text/AST substitution, not a
+// runtime lookup) — any indirection (destructuring `process.env` into a
+// variable first, reading via `globalThis`) defeats it silently: the
+// substitution never fires, and there is no real `process` global in the
+// browser to fall back on, so it always resolves to undefined.
+declare const process: { env: Record<string, string | undefined> };
+
 function baseUrl(): string {
-  // Next.js inlines NEXT_PUBLIC_* at build time. Read via globalThis so the
-  // browser-facing SDK needs no Node type definitions.
-  const env = (globalThis as { process?: { env?: Record<string, string | undefined> } })
-    .process?.env;
-  return env?.NEXT_PUBLIC_API_URL || DEFAULT_BASE_URL;
+  return process.env.NEXT_PUBLIC_API_URL || DEFAULT_BASE_URL;
+}
+
+// API §3.1 — GET /v1/admin/session. Called once after Supabase Auth hands the
+// frontend a JWT, to know which hotel(s)/org(s) and roles it's working with.
+export async function getAdminSession(
+  accessToken: string,
+): Promise<AdminSessionResponse> {
+  const res = await fetch(`${baseUrl()}/v1/admin/session`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!res.ok) {
+    throw new Error(`admin session fetch failed: ${res.status}`);
+  }
+  return (await res.json()) as AdminSessionResponse;
 }
 
 // API §2.4 — GET /v1/chat/bootstrap
