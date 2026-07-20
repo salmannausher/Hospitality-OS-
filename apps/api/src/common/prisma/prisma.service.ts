@@ -86,4 +86,22 @@ export class PrismaService
     `;
     return rows[0]?.hotelId ?? null;
   }
+
+  /**
+   * Resolve the Hotel rows (id/name/slug) a user has a HotelMembership to.
+   * Needed for GET /v1/admin/session (API §3.1), which runs with NO tenant
+   * context — an Agency Admin's memberships legitimately span hotels, and this
+   * call is itself what discovers which hotel(s) to scope to next. `Hotel` is
+   * RLS-scoped, so a plain join would silently return nulls under app_role
+   * here; this calls the SECURITY DEFINER `admin_hotels_for_user` function
+   * (migration 5_admin_hotel_resolver), which can only ever return hotels the
+   * given userId already has a real HotelMembership row for.
+   */
+  async resolveMemberHotels(
+    userId: string,
+  ): Promise<Array<{ id: string; name: string; slug: string }>> {
+    return this.$queryRaw<Array<{ id: string; name: string; slug: string }>>`
+      SELECT * FROM admin_hotels_for_user(${userId})
+    `;
+  }
 }

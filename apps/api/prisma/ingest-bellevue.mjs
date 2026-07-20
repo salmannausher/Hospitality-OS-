@@ -52,10 +52,16 @@ try {
     }
   });
 
+  // One document's failure (e.g. transient DB/pooler latency, a rate limit)
+  // must not abort the rest of the batch — report it and keep going.
   for (const filename of files) {
-    const buffer = readFileSync(join(contentDir, filename));
-    const { documentId, status } = await ingestion.ingestNow(hotelId, filename, buffer);
-    console.log(`  ${filename.padEnd(32)} → ${status.padEnd(13)} (doc ${documentId})`);
+    try {
+      const buffer = readFileSync(join(contentDir, filename));
+      const { documentId, status } = await ingestion.ingestNow(hotelId, filename, buffer);
+      console.log(`  ${filename.padEnd(32)} → ${status.padEnd(13)} (doc ${documentId})`);
+    } catch (err) {
+      console.log(`  ${filename.padEnd(32)} → ERROR         (${err.message})`);
+    }
   }
   console.log('\nDone.');
 } catch (err) {

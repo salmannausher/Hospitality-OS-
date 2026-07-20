@@ -55,7 +55,9 @@ export class IngestionService implements OnModuleInit {
   ) {}
 
   onModuleInit(): void {
-    this.queue.process((payload) => this.processDocument(payload));
+    this.queue.process(async (payload) => {
+      await this.processDocument(payload);
+    });
   }
 
   /**
@@ -83,14 +85,11 @@ export class IngestionService implements OnModuleInit {
     buffer: Buffer,
   ): Promise<{ documentId: string; status: string }> {
     const documentId = await this.createDocument(hotelId, filename, buffer);
-    await this.processDocument({ documentId, hotelId });
-    const doc = await this.prisma.withTenant(hotelId, (tx) =>
-      tx.document.findFirstOrThrow({
-        where: { id: documentId },
-        select: { status: true },
-      }),
-    );
-    return { documentId, status: doc.status };
+    // processDocument already persists AND returns the final status — reading
+    // it back via a second transaction was pure overhead (and, under pooler
+    // load, an extra place to flakily time out on a value already known).
+    const status = await this.processDocument({ documentId, hotelId });
+    return { documentId, status };
   }
 
   private async createDocument(
@@ -127,7 +126,7 @@ export class IngestionService implements OnModuleInit {
   async processDocument(payload: {
     documentId: string;
     hotelId: string;
-  }): Promise<void> {
+  }): Promise<'INDEXED' | 'NEEDS_REVIEW' | 'FAILED'> {
     const { documentId, hotelId } = payload;
     const stages: StageRecord[] = [];
     let finalStatus: 'INDEXED' | 'NEEDS_REVIEW' | 'FAILED' = 'INDEXED';
@@ -201,6 +200,7 @@ export class IngestionService implements OnModuleInit {
 
     await this.persistJobsAndStatus(hotelId, documentId, stages, finalStatus);
     this.logger.log(`Document ${documentId} → ${finalStatus}`);
+    return finalStatus;
   }
 
   // ---------------------------------------------------------------------------

@@ -188,3 +188,24 @@ export interface ClassifierOutput {
     leadCaptureWorthy: boolean;
   };
 }
+
+// ---------------------------------------------------------------------------
+// API §3.1 — GET /v1/admin/session. What the admin frontend calls once after
+// Supabase Auth hands it a JWT, to know which hotel(s)/org(s) and roles it has.
+// ---------------------------------------------------------------------------
+
+export interface AdminSessionResponse {
+  user: { id: string; email: string; name: string | null };
+  organizationMemberships: Array<{
+    id: string;
+    organizationId: string;
+    role: Role;
+    organization: { id: string; name: string };
+  }>;
+  hotelMemberships: Array<{
+    id: string;
+    hotelId: string;
+    role: Role;
+    hotel: { id: string; name: string; slug: string } | null;
+  }>;
+}

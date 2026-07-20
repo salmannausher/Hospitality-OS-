@@ -1,5 +1,12 @@
 import { Injectable, Logger } from '@nestjs/common';
 
+/** Marks an error as not worth retrying — unwrapped and rethrown immediately. */
+class NonRetryableError extends Error {
+  constructor(public readonly cause: Error) {
+    super(cause.message);
+  }
+}
+
 /**
  * Voyage AI embeddings — the query-time and ingestion-time embedding call
  * (AI Engine §1 steps 3 / ingestion). Voyage, not OpenAI, deliberately
@@ -38,7 +45,9 @@ export class EmbeddingsService {
   ): Promise<number[][]> {
     if (texts.length === 0) return [];
 
-    // Retry transient network/5xx failures. 4xx (auth, bad request) are not retried.
+    // Retry transient failures — network errors, 429 (rate limit), and 5xx.
+    // A genuine 400/401/403/404 will never succeed on retry, so fail fast
+    // rather than burn the whole backoff budget for nothing.
     const MAX_ATTEMPTS = 6;
     let lastErr: unknown;
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
@@ -58,13 +67,13 @@ export class EmbeddingsService {
 
         if (!res.ok) {
           const body = await res.text().catch(() => '');
-          if (res.status >= 400 && res.status < 500) {
-            this.logger.error(
-              `Voyage embeddings failed: ${res.status} ${body}`,
-            );
-            throw new Error(`Voyage embeddings request failed (${res.status})`);
-          }
-          throw new Error(`Voyage embeddings transient error (${res.status})`);
+          const retryable = res.status === 429 || res.status >= 500;
+          this.logger.error(`Voyage embeddings failed: ${res.status} ${body}`);
+          const err = new Error(
+            `Voyage embeddings request failed (${res.status})`,
+          );
+          if (!retryable) throw new NonRetryableError(err);
+          throw err;
         }
 
         const json = (await res.json()) as {
@@ -72,6 +81,7 @@ export class EmbeddingsService {
         };
         return json.data.map((d) => d.embedding);
       } catch (err) {
+        if (err instanceof NonRetryableError) throw err.cause;
         lastErr = err;
         if (attempt < MAX_ATTEMPTS)
           await new Promise((r) => setTimeout(r, 1500 * attempt));
