@@ -1,0 +1,66 @@
+@import "tailwindcss";
+
+@theme inline {
+  --font-display: var(--font-cormorant);
+  --font-sans: var(--font-work-sans);
+}
+
+@theme {
+  /* Bellevue Hotel — "The Quiet Constant" (docs/18 §2). Sun-on-stone,
+     not tech-blue: bleached limestone, warm sand, tide-ink, sea-glass,
+     aged brass as the one precious accent. Distinct from both the
+     product design system and the Hospitality AI OS landing page. */
+  --color-sand: #f2ebdd;
+  --color-stone: #e8dfcc;
+  --color-line: #d9cdb2;
+  --color-ink: #1c2422;
+  --color-ink-soft: #5a5f57;
+  --color-sea: #6f8c84;
+  --color-brass: #93702f;
+  --color-brass-light: #c9a463;
+  --color-clay: #af6b48;
+  --color-night: #141c1a;
+  --color-night-soft: #212a24;
+  --color-mist: #a79f8c;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}
+
+body {
+  background: var(--color-sand);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+}
+
+::selection {
+  background: var(--color-brass-light);
+  color: var(--color-night);
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-brass);
+  outline-offset: 3px;
+}
+
+/* Unifies photography from disparate sources into one house look
+   (docs/18 §2: "five different photographers' images feel like one hotel"). */
+.photo-treated {
+  filter: saturate(0.88) contrast(1.05) brightness(1.02) sepia(0.06);
+}
+
+.grain::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.04;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
+}
