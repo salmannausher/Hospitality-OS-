@@ -21,6 +21,8 @@ Ten documents, read in order the first time; used as reference after that. Each 
 | 13 | [Sales Demo Script](13-sales-demo-script.md) | The pitch: what to say to Adam, in what order, and the one ask. |
 | 14 | [Sprint Backlog & Development Roadmap](14-sprint-backlog.md) | The actual checklist — every phase broken into checkable tickets. **This is the living document; update it as work happens, don't just read it.** |
 | 15 | [Prompt Library Implementation Prompts](15-prompt-library-implementation-prompts.md) | Six ready-to-paste prompts for a Claude Code session — scaffold the library, then one per module. |
+| 16 | [Demo Property: Bellevue Hotel](16-demo-property-content.md) | Real content for the demo site and knowledge-base ingestion testing — rooms, dining, spa, policies, relationship bundles, photography sourcing. |
+| 17 | [Landing Page Plan](17-landing-page-plan.md) | Devsphinx's own product page — different audience than the Bellevue demo, not shown to Adam. |
 
 ## Quick lookups
 

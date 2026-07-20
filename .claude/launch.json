@@ -9,6 +9,24 @@
         "export NVM_DIR=\"$HOME/.nvm\" && . \"$NVM_DIR/nvm.sh\" && nvm use 24 >/dev/null && pnpm --filter web dev"
       ],
       "port": 3000
+    },
+    {
+      "name": "web-widget",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": [
+        "-lc",
+        "export NVM_DIR=\"$HOME/.nvm\" && . \"$NVM_DIR/nvm.sh\" && nvm use 24 >/dev/null && pnpm --filter web dev -p 3200"
+      ],
+      "port": 3200
+    },
+    {
+      "name": "demo-bellevue",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": [
+        "-lc",
+        "export NVM_DIR=\"$HOME/.nvm\" && . \"$NVM_DIR/nvm.sh\" && nvm use 24 >/dev/null && pnpm --filter demo-bellevue dev"
+      ],
+      "port": 3002
     }
   ]
 }
