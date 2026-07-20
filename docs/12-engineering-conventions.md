@@ -99,8 +99,8 @@ SUPABASE_URL=
 SUPABASE_SERVICE_KEY=
 AI_GATEWAY_API_KEY=          # Claude + fallback routing — Architecture §7
 VOYAGE_API_KEY=               # embeddings — AI Engine §1
-UPSTASH_REDIS_URL=
-UPSTASH_REDIS_TOKEN=
+UPSTASH_REDIS_REST_URL=      # matches @upstash/redis's actual expected var names, not a generic guess
+UPSTASH_REDIS_REST_TOKEN=
 POSTHOG_KEY=
 SENTRY_DSN=
 ```

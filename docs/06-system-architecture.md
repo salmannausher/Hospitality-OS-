@@ -69,19 +69,26 @@ Four logical services, not necessarily four deployments (see §8 on why this col
 
 ```
 apps/
- ├── web   (Next.js — guest widget + admin portal)
- └── api   (NestJS)
-      src/
-       ├── auth/
-       ├── hotels/            (tenancy, brand settings, widget keys — §6)
-       ├── knowledge/         (documents, chunks, entities, ingestion — §5)
-       ├── conversations/     (chat orchestrator — §4)
-       ├── ai/                (AI Gateway calls, retrieval, confidence scoring — §7)
-       ├── leads/
-       ├── analytics/
-       ├── playbook/          (QA scoring, scenario flagging)
-       └── common/            (RLS session-context middleware, shared types)
+ ├── web              (Next.js — guest widget dev harness + admin portal)
+ ├── api              (NestJS)
+ │    src/
+ │     ├── auth/
+ │     ├── hotels/            (tenancy, brand settings, widget keys — §6)
+ │     ├── knowledge/         (documents, chunks, entities, ingestion — §5)
+ │     ├── conversations/     (chat orchestrator — §4)
+ │     ├── ai/                (AI Gateway calls, retrieval, confidence scoring — §7)
+ │     ├── leads/
+ │     ├── analytics/
+ │     ├── playbook/          (QA scoring, scenario flagging)
+ │     └── common/            (RLS session-context middleware, shared types)
+ └── demo-bellevue    (the sales-demo hotel site — docs/16. Embeds the widget via
+                        a real <script> tag, the same integration path a genuine
+                        hotel client site would use, not a React component living
+                        inside apps/web. This is what makes the demo an honest test
+                        of the actual production embed mechanism.)
 ```
+
+The embeddable widget script itself — a bundled entry point any third-party page can load via `<script src=".../widget.js" data-widget-key="...">`, mounting into the page — is a build target that lives alongside `packages/ui`'s components but ships as its own bundle, not as internal React components `apps/web` imports directly. Named explicitly here because it hadn't been called out as its own artifact before `apps/demo-bellevue` required a real embed to test against ([Sprint Backlog](14-sprint-backlog.md)).
 
 If a specific module later needs independent scaling (the Ingestion Worker's CPU profile is the most likely candidate — §5, §8), that's a well-scoped extraction to do once there's a measured reason, not a default to build in now on guesswork.
 
