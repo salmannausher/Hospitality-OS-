@@ -74,6 +74,26 @@ export type EntityType =
   | "PROPERTY_PROFILE";
 
 // ---------------------------------------------------------------------------
+// API §2.4 — GET /v1/chat/bootstrap. Everything the widget needs to render the
+// launcher and opening state in one round trip. Produced by apps/api, consumed
+// by packages/sdk — this shared package is the single source for the contract.
+// ---------------------------------------------------------------------------
+
+export interface BootstrapResponse {
+  hotel: { name: string; conciergeName: string };
+  brand: {
+    tonePreset: string;
+    primaryColor: string;
+    fontFamily: string;
+    logoUrl: string;
+  };
+  greeting: string;
+  suggestedQuestions: string[];
+  quickStart: Array<{ label: string; contextTag: string }>;
+  launcherDelayMs: number;
+}
+
+// ---------------------------------------------------------------------------
 // API §2.1 — the SSE event union. This is the contract the widget renders
 // against — the widget never infers behavior, it only renders these events.
 // ---------------------------------------------------------------------------

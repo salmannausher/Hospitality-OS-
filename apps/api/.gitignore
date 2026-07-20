@@ -1,0 +1,4 @@
+.vercel
+
+# Local dev document storage (ingestion)
+.data/

@@ -1,7 +1,9 @@
 {
   "extends": "@hospitality/config/base.json",
   "compilerOptions": {
-    "noEmit": true
+    "noEmit": true,
+    // Browser-facing client: fetch, TextDecoder, ReadableStream live in DOM.
+    "lib": ["ES2022", "DOM"]
   },
   "include": ["src"]
 }
