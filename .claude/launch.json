@@ -27,6 +27,15 @@
         "export NVM_DIR=\"$HOME/.nvm\" && . \"$NVM_DIR/nvm.sh\" && nvm use 24 >/dev/null && pnpm --filter demo-bellevue dev"
       ],
       "port": 3002
+    },
+    {
+      "name": "api",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": [
+        "-lc",
+        "export NVM_DIR=\"$HOME/.nvm\" && . \"$NVM_DIR/nvm.sh\" && nvm use 24 >/dev/null && pnpm --filter api start:dev"
+      ],
+      "port": 3100
     }
   ]
 }

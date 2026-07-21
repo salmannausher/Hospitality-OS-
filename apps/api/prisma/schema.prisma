@@ -214,6 +214,13 @@ model Document {
   uploadedAt   DateTime           @default(now())
   deletedAt    DateTime? // soft delete — see §1
 
+  // Human-readable validation findings (IA §9), e.g. "Room Type 'Ocean Suite'
+  // is missing capacity." Surfaces *why* a document is NEEDS_REVIEW instead of
+  // leaving it an opaque status flag. Not a link to the specific entity row —
+  // that needs a documentId FK on every entity table, deferred pending a
+  // decision (see docs/14-sprint-backlog.md).
+  validationIssues String[] @default([])
+
   chunks        Chunk[]
   ingestionJobs IngestionJob[]
 
