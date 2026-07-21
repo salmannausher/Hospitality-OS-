@@ -1,0 +1,12 @@
+-- Document.validationIssues (IA §9) — human-readable validation findings,
+-- e.g. "Room Type 'Ocean Suite' is missing capacity." Surfaces *why* a
+-- document is NEEDS_REVIEW instead of leaving it an opaque status flag.
+--
+-- Manually authored, not `migrate dev` output: this schema has pre-existing
+-- drift `migrate diff` cannot see past — migration 1_rls_policies hand-adds a
+-- GIN index on Chunk.domainTags/Message.domainTags and an HNSW index on
+-- Chunk.embedding via raw SQL (Prisma's DSL can't express either), so a naive
+-- `migrate dev`/`migrate diff --script` against schema.prisma proposes
+-- DROPping all three. Do not apply those — this file contains only the
+-- actual intended change.
+ALTER TABLE "Document" ADD COLUMN "validationIssues" TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[];

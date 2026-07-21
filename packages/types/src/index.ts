@@ -47,6 +47,8 @@ export type Persona =
 
 export type DocumentStatus = "PARSING" | "NEEDS_REVIEW" | "FAILED" | "INDEXED";
 
+export type DocumentSourceType = "PDF" | "DOCX" | "TEXT" | "URL";
+
 export type IngestionStage =
   | "PARSING"
   | "EXTRACTING"
@@ -208,4 +210,55 @@ export interface AdminSessionResponse {
     role: Role;
     hotel: { id: string; name: string; slug: string } | null;
   }>;
+}
+
+// ---------------------------------------------------------------------------
+// API §3.2 — Knowledge upload & validation (UX §9). A document uploaded
+// through the admin screen ends up as retrievable, tagged chunks; these
+// shapes are what that screen polls and renders while that happens.
+// ---------------------------------------------------------------------------
+
+/** Cursor-paginated list envelope (API §1 conventions) — used everywhere a
+ * knowledge list response is paginated, never offset-based. */
+export interface Paginated<T> {
+  items: T[];
+  nextCursor: string | null;
+}
+
+export interface KnowledgeDocumentSummary {
+  id: string;
+  filename: string;
+  sourceType: DocumentSourceType;
+  sourceUrl: string | null;
+  status: DocumentStatus;
+  /** Human-readable findings, e.g. "Room Type 'Ocean Suite' is missing
+   * capacity." Read-only for now — see docs/14-sprint-backlog.md for why the
+   * guided pre-filled edit form isn't built yet. */
+  validationIssues: string[];
+  uploadedAt: string;
+  lastSyncedAt: string | null;
+}
+
+export interface KnowledgeDocumentStageStatus {
+  documentStatus: DocumentStatus;
+  stages: Array<{
+    stage: IngestionStage;
+    status: JobStatus;
+    error: string | null;
+    startedAt: string | null;
+    completedAt: string | null;
+  }>;
+}
+
+export interface KnowledgeChunkPreview {
+  id: string;
+  content: string;
+  domainTags: string[];
+  priority: Priority;
+  tokenCount: number | null;
+}
+
+export interface CreateKnowledgeDocumentResponse {
+  documentId: string;
+  jobId: string;
 }

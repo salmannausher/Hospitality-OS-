@@ -21,6 +21,14 @@ Determine:
 
 2. domain — zero or more of: accommodation, booking, dining, spa, property,
    local_area, policies, events
+   - Retrieval filters knowledge strictly to the domains you return here — a domain
+     you omit is content the guest's question cannot be answered from, even if the
+     right answer lives there. Err toward including every domain the question could
+     plausibly touch, not just the single best-fit one.
+   - Topics that live administratively under one domain but are commonly asked about
+     under another must get both tags, e.g. "what time is breakfast" is dining (the
+     answer: hours/menu) AND accommodation (it's often part of a room package) —
+     tag both, don't pick one.
 
 3. persona — the single best-fit traveler type, or null if unclear:
    luxury_traveler | family_traveler | business_traveler | wedding_planner |

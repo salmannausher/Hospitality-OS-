@@ -9,10 +9,24 @@ import type {
   AdminSessionResponse,
   BootstrapResponse,
   ChatSSEEvent,
+  CreateKnowledgeDocumentResponse,
+  DocumentStatus,
+  KnowledgeChunkPreview,
+  KnowledgeDocumentStageStatus,
+  KnowledgeDocumentSummary,
+  Paginated,
 } from "@hospitality/types";
 
 // Re-exported so frontend code has one import site for these shapes.
-export type { AdminSessionResponse, BootstrapResponse } from "@hospitality/types";
+export type {
+  AdminSessionResponse,
+  BootstrapResponse,
+  CreateKnowledgeDocumentResponse,
+  KnowledgeChunkPreview,
+  KnowledgeDocumentStageStatus,
+  KnowledgeDocumentSummary,
+  Paginated,
+} from "@hospitality/types";
 
 /** Base URL of the api. Overridable for local dev / preview deploys. */
 const DEFAULT_BASE_URL = "http://localhost:3000";
@@ -42,6 +56,107 @@ export async function getAdminSession(
     throw new Error(`admin session fetch failed: ${res.status}`);
   }
   return (await res.json()) as AdminSessionResponse;
+}
+
+// ---------------------------------------------------------------------------
+// API §3.2 — Knowledge upload & validation (UX §9). `hotelId` is only needed
+// when the caller belongs to more than one hotel (API §1: multi-hotel admins
+// pass it as a query param, validated server-side against membership).
+// ---------------------------------------------------------------------------
+
+export async function uploadKnowledgeDocument(
+  accessToken: string,
+  params:
+    | { hotelId?: string; file: File }
+    | { hotelId?: string; sourceUrl: string },
+): Promise<CreateKnowledgeDocumentResponse> {
+  const qs = params.hotelId
+    ? `?hotelId=${encodeURIComponent(params.hotelId)}`
+    : "";
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${accessToken}`,
+  };
+  let body: BodyInit;
+  if ("file" in params) {
+    const form = new FormData();
+    form.append("file", params.file);
+    body = form; // fetch sets the multipart Content-Type (with boundary) itself.
+  } else {
+    headers["Content-Type"] = "application/json";
+    body = JSON.stringify({ sourceUrl: params.sourceUrl });
+  }
+  const res = await fetch(`${baseUrl()}/v1/admin/knowledge/documents${qs}`, {
+    method: "POST",
+    headers,
+    body,
+  });
+  if (!res.ok) {
+    throw new Error(`knowledge document upload failed: ${res.status}`);
+  }
+  return (await res.json()) as CreateKnowledgeDocumentResponse;
+}
+
+export async function listKnowledgeDocuments(
+  accessToken: string,
+  opts: {
+    hotelId?: string;
+    status?: DocumentStatus;
+    cursor?: string;
+    limit?: number;
+  } = {},
+): Promise<Paginated<KnowledgeDocumentSummary>> {
+  const params = new URLSearchParams();
+  if (opts.hotelId) params.set("hotelId", opts.hotelId);
+  if (opts.status) params.set("status", opts.status);
+  if (opts.cursor) params.set("cursor", opts.cursor);
+  if (opts.limit) params.set("limit", String(opts.limit));
+  const qs = params.toString();
+  const res = await fetch(
+    `${baseUrl()}/v1/admin/knowledge/documents${qs ? `?${qs}` : ""}`,
+    { headers: { Authorization: `Bearer ${accessToken}` } },
+  );
+  if (!res.ok) {
+    throw new Error(`knowledge document list failed: ${res.status}`);
+  }
+  return (await res.json()) as Paginated<KnowledgeDocumentSummary>;
+}
+
+export async function getKnowledgeDocumentStatus(
+  accessToken: string,
+  documentId: string,
+  opts: { hotelId?: string } = {},
+): Promise<KnowledgeDocumentStageStatus> {
+  const qs = opts.hotelId
+    ? `?hotelId=${encodeURIComponent(opts.hotelId)}`
+    : "";
+  const res = await fetch(
+    `${baseUrl()}/v1/admin/knowledge/documents/${documentId}/status${qs}`,
+    { headers: { Authorization: `Bearer ${accessToken}` } },
+  );
+  if (!res.ok) {
+    throw new Error(`knowledge document status failed: ${res.status}`);
+  }
+  return (await res.json()) as KnowledgeDocumentStageStatus;
+}
+
+export async function getKnowledgeDocumentChunks(
+  accessToken: string,
+  documentId: string,
+  opts: { hotelId?: string; cursor?: string; limit?: number } = {},
+): Promise<Paginated<KnowledgeChunkPreview>> {
+  const params = new URLSearchParams();
+  if (opts.hotelId) params.set("hotelId", opts.hotelId);
+  if (opts.cursor) params.set("cursor", opts.cursor);
+  if (opts.limit) params.set("limit", String(opts.limit));
+  const qs = params.toString();
+  const res = await fetch(
+    `${baseUrl()}/v1/admin/knowledge/documents/${documentId}/chunks${qs ? `?${qs}` : ""}`,
+    { headers: { Authorization: `Bearer ${accessToken}` } },
+  );
+  if (!res.ok) {
+    throw new Error(`knowledge chunk preview failed: ${res.status}`);
+  }
+  return (await res.json()) as Paginated<KnowledgeChunkPreview>;
 }
 
 // API §2.4 — GET /v1/chat/bootstrap

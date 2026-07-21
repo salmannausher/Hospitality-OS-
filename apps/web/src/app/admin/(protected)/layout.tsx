@@ -13,7 +13,7 @@ import { useAdminAuth } from "@/lib/admin-auth-context";
 const NAV_ITEMS = [
   { label: "Dashboard", href: "/admin" },
   { label: "Hotels", href: null, agencyOnly: true },
-  { label: "Knowledge Base", href: null },
+  { label: "Knowledge Base", href: "/admin/knowledge" },
   { label: "Conversations", href: null },
   { label: "Leads", href: null },
   { label: "Analytics", href: null },

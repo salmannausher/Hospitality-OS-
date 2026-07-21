@@ -6,6 +6,7 @@ import { EmbeddingsService } from '../ai/embeddings.service';
 import { GatewayService, type ExtractionResult } from '../ai/gateway.service';
 import { ChunkerService, type Chunk } from './chunker.service';
 import { ParserService } from './parser.service';
+import { UrlFetcherService } from './url-fetcher.service';
 import {
   DOCUMENT_STORAGE,
   type DocumentStorage,
@@ -20,12 +21,44 @@ type Stage =
   | 'EMBEDDING'
   | 'VALIDATING';
 
+type SourceType = 'PDF' | 'DOCX' | 'TEXT' | 'URL';
+
+export type DocumentStatusValue =
+  'PARSING' | 'NEEDS_REVIEW' | 'FAILED' | 'INDEXED';
+
 interface StageRecord {
   stage: Stage;
   status: 'SUCCEEDED' | 'FAILED';
   error: string | null;
   startedAt: Date;
   completedAt: Date;
+}
+
+export interface DocumentSummary {
+  id: string;
+  filename: string;
+  sourceType: string;
+  sourceUrl: string | null;
+  status: string;
+  validationIssues: string[];
+  uploadedAt: Date;
+  lastSyncedAt: Date | null;
+}
+
+export interface StageStatusEntry {
+  stage: string;
+  status: string;
+  error: string | null;
+  startedAt: Date | null;
+  completedAt: Date | null;
+}
+
+export interface ChunkPreviewItem {
+  id: string;
+  content: string;
+  domainTags: string[];
+  priority: string;
+  tokenCount: number | null;
 }
 
 /**
@@ -39,6 +72,12 @@ interface StageRecord {
  * document is marked NEEDS_REVIEW (AI Engine §8) but chunks are still embedded
  * and written, so re-running ingestion once the card is present flips it to
  * INDEXED without re-parsing from scratch.
+ *
+ * Each IngestionJob row is written incrementally — created RUNNING when a
+ * stage starts, updated to SUCCEEDED/FAILED when it finishes — rather than
+ * batched at the end, so `GET .../documents/:id/status` (API §3.2) can show
+ * the guest-facing "Reading… Chunking… Embedding…" progression (UX §9) while
+ * a document is actively processing, not just after the fact.
  */
 @Injectable()
 export class IngestionService implements OnModuleInit {
@@ -50,6 +89,7 @@ export class IngestionService implements OnModuleInit {
     private readonly chunker: ChunkerService,
     private readonly gateway: GatewayService,
     private readonly embeddings: EmbeddingsService,
+    private readonly urlFetcher: UrlFetcherService,
     @Inject(DOCUMENT_STORAGE) private readonly storage: DocumentStorage,
     @Inject(INGESTION_QUEUE) private readonly queue: IngestionQueue,
   ) {}
@@ -63,14 +103,36 @@ export class IngestionService implements OnModuleInit {
   /**
    * Accept a raw file: store bytes, create the Document (PARSING), enqueue async
    * processing. Returns immediately (Architecture §5). This is what the authed
-   * admin upload endpoint will call once Supabase Auth is wired.
+   * admin upload endpoint calls.
    */
   async ingestFile(
     hotelId: string,
     filename: string,
     buffer: Buffer,
   ): Promise<{ documentId: string }> {
-    const documentId = await this.createDocument(hotelId, filename, buffer);
+    const documentId = await this.createDocument(hotelId, { filename, buffer });
+    await this.queue.enqueue({ documentId, hotelId });
+    return { documentId };
+  }
+
+  /**
+   * Fetch a public URL, extract its readable text, and ingest it exactly like
+   * an uploaded file (IA §4 "Web pages (URL sync)"). One-shot fetch-and-extract
+   * only — the fuller "scheduled re-crawl, diffed" behavior IA §4 also
+   * describes needs recurring-job infra (Architecture §8's BullMQ swap isn't
+   * wired to a real queue yet) and is deliberately deferred, not built here.
+   */
+  async ingestUrl(
+    hotelId: string,
+    sourceUrl: string,
+  ): Promise<{ documentId: string }> {
+    const text = await this.urlFetcher.fetchText(sourceUrl);
+    const documentId = await this.createDocument(hotelId, {
+      filename: this.filenameFromUrl(sourceUrl),
+      buffer: Buffer.from(text, 'utf8'),
+      sourceType: 'URL',
+      sourceUrl,
+    });
     await this.queue.enqueue({ documentId, hotelId });
     return { documentId };
   }
@@ -84,7 +146,7 @@ export class IngestionService implements OnModuleInit {
     filename: string,
     buffer: Buffer,
   ): Promise<{ documentId: string; status: string }> {
-    const documentId = await this.createDocument(hotelId, filename, buffer);
+    const documentId = await this.createDocument(hotelId, { filename, buffer });
     // processDocument already persists AND returns the final status — reading
     // it back via a second transaction was pure overhead (and, under pooler
     // load, an extra place to flakily time out on a value already known).
@@ -94,14 +156,31 @@ export class IngestionService implements OnModuleInit {
 
   private async createDocument(
     hotelId: string,
-    filename: string,
-    buffer: Buffer,
+    input: {
+      filename: string;
+      buffer: Buffer;
+      sourceType?: SourceType;
+      sourceUrl?: string;
+    },
   ): Promise<string> {
-    const storageUrl = await this.storage.store(hotelId, filename, buffer);
-    const sourceType = this.detectSourceType(filename);
+    const storageUrl = await this.storage.store(
+      hotelId,
+      input.filename,
+      input.buffer,
+    );
+    const sourceType =
+      input.sourceType ?? this.detectSourceType(input.filename);
     return this.prisma.withTenant(hotelId, async (tx) => {
       const doc = await tx.document.create({
-        data: { hotelId, filename, sourceType, storageUrl, status: 'PARSING' },
+        data: {
+          hotelId,
+          filename: input.filename,
+          sourceType,
+          storageUrl,
+          sourceUrl: input.sourceUrl ?? null,
+          lastSyncedAt: input.sourceUrl ? new Date() : null,
+          status: 'PARSING',
+        },
       });
       return doc.id;
     });
@@ -121,6 +200,105 @@ export class IngestionService implements OnModuleInit {
     return ids.length;
   }
 
+  // --- Admin read surface (API §3.2) ----------------------------------------
+
+  /** List documents for a hotel, optionally filtered by status — powers the
+   * upload screen's status badges (UX §9). Cursor-paginated per API §1. */
+  async listDocuments(
+    hotelId: string,
+    opts: {
+      status?: DocumentStatusValue;
+      cursor?: string;
+      limit?: number;
+    } = {},
+  ): Promise<{ items: DocumentSummary[]; nextCursor: string | null }> {
+    const limit = Math.min(opts.limit ?? 50, 100);
+    return this.prisma.withTenant(hotelId, async (tx) => {
+      const docs = await tx.document.findMany({
+        where: {
+          deletedAt: null,
+          ...(opts.status ? { status: opts.status } : {}),
+        },
+        orderBy: { uploadedAt: 'desc' },
+        take: limit + 1,
+        ...(opts.cursor ? { cursor: { id: opts.cursor }, skip: 1 } : {}),
+      });
+      const hasMore = docs.length > limit;
+      const page = hasMore ? docs.slice(0, limit) : docs;
+      return {
+        items: page.map((d) => ({
+          id: d.id,
+          filename: d.filename,
+          sourceType: d.sourceType,
+          sourceUrl: d.sourceUrl,
+          status: d.status,
+          validationIssues: d.validationIssues,
+          uploadedAt: d.uploadedAt,
+          lastSyncedAt: d.lastSyncedAt,
+        })),
+        nextCursor: hasMore ? (page[page.length - 1]?.id ?? null) : null,
+      };
+    });
+  }
+
+  /** Per-stage pipeline status from IngestionJob rows (API §3.2) — the UI's
+   * "Reading… Chunking… Embedding…" labels, polled at 2s while processing. */
+  async getStageStatus(
+    hotelId: string,
+    documentId: string,
+  ): Promise<{ documentStatus: string; stages: StageStatusEntry[] }> {
+    return this.prisma.withTenant(hotelId, async (tx) => {
+      const doc = await tx.document.findFirstOrThrow({
+        where: { id: documentId },
+      });
+      const jobs = await tx.ingestionJob.findMany({
+        where: { documentId },
+        orderBy: { startedAt: 'asc' },
+      });
+      return {
+        documentStatus: doc.status,
+        stages: jobs.map((j) => ({
+          stage: j.stage,
+          status: j.status,
+          error: j.error,
+          startedAt: j.startedAt,
+          completedAt: j.completedAt,
+        })),
+      };
+    });
+  }
+
+  /** Chunk preview (API §3.2) — content + tags + priority, never embeddings.
+   * Cursor-paginated per API §1. */
+  async getChunks(
+    hotelId: string,
+    documentId: string,
+    opts: { cursor?: string; limit?: number } = {},
+  ): Promise<{ items: ChunkPreviewItem[]; nextCursor: string | null }> {
+    const limit = Math.min(opts.limit ?? 50, 100);
+    return this.prisma.withTenant(hotelId, async (tx) => {
+      const rows = await tx.chunk.findMany({
+        where: { documentId },
+        select: {
+          id: true,
+          content: true,
+          domainTags: true,
+          priority: true,
+          tokenCount: true,
+        },
+        orderBy: { id: 'asc' },
+        take: limit + 1,
+        ...(opts.cursor ? { cursor: { id: opts.cursor }, skip: 1 } : {}),
+      });
+      const hasMore = rows.length > limit;
+      const page = hasMore ? rows.slice(0, limit) : rows;
+      return {
+        items: page,
+        nextCursor: hasMore ? (page[page.length - 1]?.id ?? null) : null,
+      };
+    });
+  }
+
   // ---------------------------------------------------------------------------
 
   async processDocument(payload: {
@@ -130,43 +308,82 @@ export class IngestionService implements OnModuleInit {
     const { documentId, hotelId } = payload;
     const stages: StageRecord[] = [];
     let finalStatus: 'INDEXED' | 'NEEDS_REVIEW' | 'FAILED' = 'INDEXED';
+    const issues: string[] = [];
+
+    // Fresh run — clear any previous attempt's per-stage rows before writing
+    // new ones incrementally as each stage starts/completes.
+    await this.prisma.withTenant(hotelId, (tx) =>
+      tx.ingestionJob.deleteMany({ where: { documentId } }),
+    );
 
     try {
       const doc = await this.prisma.withTenant(hotelId, (tx) =>
         tx.document.findFirstOrThrow({ where: { id: documentId } }),
       );
 
-      // 1. PARSING — fatal on failure.
-      const parsed = await this.runStage(stages, 'PARSING', async () => {
-        const buffer = await this.storage.read(doc.storageUrl);
-        return this.parser.parse(doc.filename, buffer);
-      });
+      // 1. PARSING — fatal on failure. URL-synced documents already have
+      // plain extracted text stored (UrlFetcherService ran at ingestUrl
+      // time) — the ParserService's extension-based dispatch doesn't apply.
+      const parsed = await this.runStage(
+        hotelId,
+        documentId,
+        stages,
+        'PARSING',
+        async () => {
+          const buffer = await this.storage.read(doc.storageUrl);
+          if (doc.sourceType === 'URL') {
+            return {
+              text: buffer.toString('utf8'),
+              sourceType: 'URL' as const,
+            };
+          }
+          return this.parser.parse(doc.filename, buffer);
+        },
+      );
 
       // 2. EXTRACTING — card-gated; failure degrades to NEEDS_REVIEW, not fatal.
       let extraction: ExtractionResult = { entities: [], domainTags: [] };
       try {
-        extraction = await this.runStage(stages, 'EXTRACTING', () =>
-          this.gateway.extractEntities(parsed.text),
+        extraction = await this.runStage(
+          hotelId,
+          documentId,
+          stages,
+          'EXTRACTING',
+          () => this.gateway.extractEntities(parsed.text),
         );
-      } catch {
+      } catch (err) {
         finalStatus = 'NEEDS_REVIEW';
+        issues.push(
+          `Entity extraction failed: ${String((err as Error)?.message ?? err)}`,
+        );
       }
 
       // 3. CHUNKING
-      const chunks = await this.runStage(stages, 'CHUNKING', () =>
-        Promise.resolve(this.chunker.chunk(parsed.text)),
+      const chunks = await this.runStage(
+        hotelId,
+        documentId,
+        stages,
+        'CHUNKING',
+        () => Promise.resolve(this.chunker.chunk(parsed.text)),
       );
 
       // 4. TAGGING — chunks inherit the document's domain tags (IA §2).
       const domainTags = extraction.domainTags;
-      await this.runStage(stages, 'TAGGING', () => Promise.resolve(domainTags));
+      await this.runStage(hotelId, documentId, stages, 'TAGGING', () =>
+        Promise.resolve(domainTags),
+      );
 
       // 5. EMBEDDING — fatal on failure (no retrievable content without vectors).
-      const vectors = await this.runStage(stages, 'EMBEDDING', () =>
-        this.embeddings.embed(
-          chunks.map((c) => c.content),
-          'document',
-        ),
+      const vectors = await this.runStage(
+        hotelId,
+        documentId,
+        stages,
+        'EMBEDDING',
+        () =>
+          this.embeddings.embed(
+            chunks.map((c) => c.content),
+            'document',
+          ),
       );
 
       // Write chunks + extracted entities (one tenant-scoped transaction).
@@ -184,8 +401,10 @@ export class IngestionService implements OnModuleInit {
       });
 
       // 6. VALIDATING (IA §9) — empty chunks, missing required entity fields.
-      const issues = await this.runStage(stages, 'VALIDATING', () =>
-        Promise.resolve(this.validate(chunks, extraction)),
+      issues.push(
+        ...(await this.runStage(hotelId, documentId, stages, 'VALIDATING', () =>
+          Promise.resolve(this.validate(chunks, extraction)),
+        )),
       );
       if (issues.length > 0) finalStatus = 'NEEDS_REVIEW';
     } catch (err) {
@@ -198,7 +417,7 @@ export class IngestionService implements OnModuleInit {
       );
     }
 
-    await this.persistJobsAndStatus(hotelId, documentId, stages, finalStatus);
+    await this.finalizeDocument(hotelId, documentId, finalStatus, issues);
     this.logger.log(`Document ${documentId} → ${finalStatus}`);
     return finalStatus;
   }
@@ -206,29 +425,45 @@ export class IngestionService implements OnModuleInit {
   // ---------------------------------------------------------------------------
 
   private async runStage<T>(
+    hotelId: string,
+    documentId: string,
     stages: StageRecord[],
     stage: Stage,
     fn: () => Promise<T>,
   ): Promise<T> {
     const startedAt = new Date();
+    const job = await this.prisma.withTenant(hotelId, (tx) =>
+      tx.ingestionJob.create({
+        data: { hotelId, documentId, stage, status: 'RUNNING', startedAt },
+      }),
+    );
     try {
       const result = await fn();
+      const completedAt = new Date();
       stages.push({
         stage,
         status: 'SUCCEEDED',
         error: null,
         startedAt,
-        completedAt: new Date(),
+        completedAt,
       });
+      await this.prisma.withTenant(hotelId, (tx) =>
+        tx.ingestionJob.update({
+          where: { id: job.id },
+          data: { status: 'SUCCEEDED', completedAt },
+        }),
+      );
       return result;
     } catch (err) {
-      stages.push({
-        stage,
-        status: 'FAILED',
-        error: String((err as Error)?.message ?? err),
-        startedAt,
-        completedAt: new Date(),
-      });
+      const completedAt = new Date();
+      const error = String((err as Error)?.message ?? err);
+      stages.push({ stage, status: 'FAILED', error, startedAt, completedAt });
+      await this.prisma.withTenant(hotelId, (tx) =>
+        tx.ingestionJob.update({
+          where: { id: job.id },
+          data: { status: 'FAILED', error, completedAt },
+        }),
+      );
       throw err;
     }
   }
@@ -238,7 +473,7 @@ export class IngestionService implements OnModuleInit {
     input: {
       hotelId: string;
       documentId: string;
-      sourceType: 'PDF' | 'DOCX' | 'TEXT';
+      sourceType: SourceType;
       domainTags: string[];
       chunks: Chunk[];
       vectors: number[][];
@@ -272,36 +507,33 @@ export class IngestionService implements OnModuleInit {
     return issues;
   }
 
-  private async persistJobsAndStatus(
+  private async finalizeDocument(
     hotelId: string,
     documentId: string,
-    stages: StageRecord[],
     status: 'INDEXED' | 'NEEDS_REVIEW' | 'FAILED',
+    validationIssues: string[],
   ): Promise<void> {
-    await this.prisma.withTenant(hotelId, async (tx) => {
-      await tx.ingestionJob.deleteMany({ where: { documentId } });
-      if (stages.length > 0) {
-        await tx.ingestionJob.createMany({
-          data: stages.map((s) => ({
-            hotelId,
-            documentId,
-            stage: s.stage,
-            status: s.status,
-            error: s.error,
-            startedAt: s.startedAt,
-            completedAt: s.completedAt,
-          })),
-        });
-      }
-      await tx.document.update({ where: { id: documentId }, data: { status } });
-    });
+    await this.prisma.withTenant(hotelId, (tx) =>
+      tx.document.update({
+        where: { id: documentId },
+        data: { status, validationIssues },
+      }),
+    );
   }
 
-  private detectSourceType(filename: string): 'PDF' | 'DOCX' | 'TEXT' | 'URL' {
+  private detectSourceType(filename: string): SourceType {
     const ext = filename.toLowerCase().split('.').pop() ?? '';
     if (ext === 'pdf') return 'PDF';
     if (ext === 'docx') return 'DOCX';
     return 'TEXT';
+  }
+
+  private filenameFromUrl(sourceUrl: string): string {
+    const { hostname, pathname } = new URL(sourceUrl);
+    const slug = `${hostname}${pathname}`
+      .replace(/[^a-zA-Z0-9._-]+/g, '-')
+      .replace(/^-+|-+$/g, '');
+    return `${slug || 'synced-page'}.txt`;
   }
 
   // --- Entity mapping: loose extracted fields → typed rows (best-effort). ---
