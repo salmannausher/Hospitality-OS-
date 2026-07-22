@@ -262,3 +262,137 @@ export interface CreateKnowledgeDocumentResponse {
   documentId: string;
   jobId: string;
 }
+
+// ---------------------------------------------------------------------------
+// API §3.3 — Structured Entities. Nine real relational tables (DB §6), one
+// per type, kept typed rather than one polymorphic JSON blob so the
+// Recommendation Engine can filter on capacity/price/duration directly.
+// Response shapes mirror the Prisma models exactly (API §3.3: "Shapes =
+// Prisma models") — Decimal fields serialize as strings (Prisma's Decimal
+// JSON representation), DateTime fields as ISO strings, matching the
+// convention already used for Knowledge shapes above. `PropertyProfile` is
+// excluded — DB §6 documents it separately as a hotel-wide singleton, not one
+// of "the nine", with no CRUD endpoint shape defined yet.
+// ---------------------------------------------------------------------------
+
+export interface RoomTypeEntity {
+  id: string;
+  hotelId: string;
+  name: string;
+  view: string | null;
+  capacity: number;
+  bedConfig: string | null;
+  accessible: boolean;
+  baseRateLow: string | null;
+  baseRateHigh: string | null;
+  deletedAt: string | null;
+}
+
+export interface PackageEntity {
+  id: string;
+  hotelId: string;
+  name: string;
+  includedItems: string[];
+  validFrom: string | null;
+  validTo: string | null;
+  priceLow: string | null;
+  priceHigh: string | null;
+  roomTypeIds: string[];
+  deletedAt: string | null;
+}
+
+export interface RestaurantEntity {
+  id: string;
+  hotelId: string;
+  name: string;
+  cuisine: string | null;
+  hours: string | null;
+  dressCode: string | null;
+  dietaryTags: string[];
+  reservationPolicy: string | null;
+  deletedAt: string | null;
+}
+
+export interface SpaTreatmentEntity {
+  id: string;
+  hotelId: string;
+  name: string;
+  durationMins: number | null;
+  price: string | null;
+  facility: string | null;
+  deletedAt: string | null;
+}
+
+export interface AmenityEntity {
+  id: string;
+  hotelId: string;
+  name: string;
+  hours: string | null;
+  location: string | null;
+  accessRule: string | null;
+  deletedAt: string | null;
+}
+
+export interface PolicyEntity {
+  id: string;
+  hotelId: string;
+  topic: string;
+  ruleText: string;
+  exceptions: string | null;
+  deletedAt: string | null;
+}
+
+export interface LocalRecommendationEntity {
+  id: string;
+  hotelId: string;
+  name: string;
+  category: string | null;
+  distanceNote: string | null;
+  curationNote: string | null;
+  deletedAt: string | null;
+}
+
+export interface EventSpaceEntity {
+  id: string;
+  hotelId: string;
+  name: string;
+  capacity: number | null;
+  layoutOptions: string[];
+  avEquipment: string[];
+  cateringMinimum: string | null;
+  deletedAt: string | null;
+}
+
+export interface ExperienceEntity {
+  id: string;
+  hotelId: string;
+  name: string;
+  category: string | null;
+  durationMins: number | null;
+  price: string | null;
+  bookingLeadHrs: number | null;
+  ageRestriction: string | null;
+  deletedAt: string | null;
+}
+
+/** Maps the kebab-case route param API §3.3 uses for `:type` to its entity shape. */
+export interface EntityByParam {
+  'room-types': RoomTypeEntity;
+  packages: PackageEntity;
+  restaurants: RestaurantEntity;
+  'spa-treatments': SpaTreatmentEntity;
+  amenities: AmenityEntity;
+  policies: PolicyEntity;
+  'local-recommendations': LocalRecommendationEntity;
+  'event-spaces': EventSpaceEntity;
+  experiences: ExperienceEntity;
+}
+
+export type EntityParam = keyof EntityByParam;
+
+/** `GET /v1/admin/entities/search` result row — typeahead for the bundle builder (UX §10). */
+export interface EntitySearchResult {
+  id: string;
+  entityType: EntityType;
+  name: string;
+}
