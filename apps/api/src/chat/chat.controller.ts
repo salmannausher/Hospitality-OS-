@@ -70,6 +70,7 @@ export class ChatController {
         sessionId: body.sessionId,
         conversationId: body.conversationId ?? null,
         message: body.message,
+        contextTag: body.contextTag ?? null,
       })) {
         send(event);
       }

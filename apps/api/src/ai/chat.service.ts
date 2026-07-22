@@ -8,6 +8,7 @@ import type {
   JourneyState,
 } from '@hospitality/types';
 import { PrismaService } from '../common/prisma/prisma.service';
+import { CardAssemblyService } from './card-assembly.service';
 import { EmbeddingsService } from './embeddings.service';
 import { GatewayService } from './gateway.service';
 import { PromptsService } from './prompts.service';
@@ -18,6 +19,15 @@ import {
   confidenceScore,
   rerankScore,
 } from './scoring';
+
+/** Journey states in which a recommendation is ever appropriate (ABS §16/§18)
+ * — never Information (answer only, no upsell needed) and never, ever,
+ * Service Recovery (ABS §19: "Continue recommending... after a Service
+ * Recovery journey state" is a forbidden behavior). */
+const RECOMMENDATION_JOURNEY_STATES: readonly JourneyState[] = [
+  'planning',
+  'booking_intent',
+];
 
 /** Retrieve this many candidates, then keep the top N after reranking. */
 const RETRIEVAL_LIMIT = 8;
@@ -77,6 +87,7 @@ export class ChatService {
     private readonly gateway: GatewayService,
     private readonly prompts: PromptsService,
     private readonly retrieval: RetrievalService,
+    private readonly cardAssembly: CardAssemblyService,
   ) {}
 
   /** GET /v1/chat/bootstrap (API §2.4). One round trip to render the launcher. */
@@ -116,16 +127,21 @@ export class ChatService {
 
   /**
    * POST /v1/chat/message (API §2.1). Yields the SSE event stream in protocol
-   * order: ack → delta* → done (card/lead_prompt/escalation/cta deferred to
-   * Sprint 3). Follows the guest-message pipeline (Architecture §4): classify →
-   * embed → retrieve → rerank → confidence → (Low: honest fallback | else:
-   * grounded generation).
+   * order: ack → delta* → card? → done. `card` fires at most once, only after
+   * the final `delta` (API §2.1's ordering guarantee — the answer always
+   * completes before any side action, ABS §18) and only in the Planning /
+   * Booking Intent journey states (ABS §16/§9), never Information (no upsell
+   * needed) and never Service Recovery (ABS §19 forbids it outright).
+   * Follows the guest-message pipeline (Architecture §4): classify → embed →
+   * retrieve → rerank → confidence → (Low: honest fallback | else: grounded
+   * generation) → recommendation bundle.
    */
   async *streamTurn(params: {
     hotelId: string;
     sessionId: string;
     conversationId: string | null;
     message: string;
+    contextTag?: string | null;
   }): AsyncGenerator<ChatSSEEvent> {
     // ack fires IMMEDIATELY — before any Supabase round trip — so it lands well
     // inside the ≤300ms budget regardless of DB/model latency (API §2.1). The
@@ -237,6 +253,29 @@ export class ChatService {
           },
         };
         return;
+      }
+    }
+
+    // --- Recommendation bundle (API §2.1 `card` event, IA §12). Only after
+    // the answer is complete (never instead of it — ABS §18), only in a
+    // journey state where recommending is appropriate, and never on the
+    // Low-Confidence fallback path (an unconfident answer earns no upsell).
+    // `contextTag` prefers the guest's own quick-start tap (UX §2) over the
+    // classifier's free-text occasion signal, since a tapped chip is the more
+    // explicit of the two.
+    const contextTag =
+      params.contextTag || classification.detectedSignals.occasion;
+    if (
+      band !== 'LOW' &&
+      contextTag &&
+      RECOMMENDATION_JOURNEY_STATES.includes(classification.journeyState)
+    ) {
+      const cards = await this.cardAssembly.buildCards(
+        params.hotelId,
+        contextTag,
+      );
+      if (cards.length > 0) {
+        yield { type: 'card', cards };
       }
     }
 
