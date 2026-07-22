@@ -124,11 +124,13 @@ export interface ChatCardEvent {
   cards: RecommendationCard[];
 }
 
+export type LeadField = "email" | "dates" | "name" | "phone";
+
 export interface ChatLeadPromptEvent {
   type: "lead_prompt";
   promptId: string;
   question: string;
-  field: "email" | "dates" | "name" | "phone";
+  field: LeadField;
 }
 
 export interface ChatEscalationEvent {
@@ -175,6 +177,27 @@ export type ChatSSEEvent =
   | ChatCtaEvent
   | ChatDoneEvent
   | ChatErrorEvent;
+
+// ---------------------------------------------------------------------------
+// API §2.2 — POST /v1/chat/lead. Submits the guest's answer to a
+// `lead_prompt` (or a decline), one field at a time (UX §4). `nextField`
+// drives the client's next inline ask without it guessing (API §2.2).
+// ---------------------------------------------------------------------------
+
+export interface SubmitLeadAnswerRequest {
+  conversationId: string;
+  promptId: string;
+  field: LeadField;
+  value: string | null;
+  consent: boolean;
+  declined?: boolean;
+}
+
+export interface SubmitLeadAnswerResponse {
+  leadId: string;
+  captured: LeadField[];
+  nextField: LeadField | null;
+}
 
 // ---------------------------------------------------------------------------
 // AI Engine §2 — the classifier call's structured output.

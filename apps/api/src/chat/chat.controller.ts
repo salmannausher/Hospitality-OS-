@@ -3,6 +3,7 @@ import {
   Body,
   Controller,
   Get,
+  HttpCode,
   Headers,
   Post,
   Res,
@@ -12,6 +13,7 @@ import type { Response } from 'express';
 import type { ChatSSEEvent } from '@hospitality/types';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { ChatService } from '../ai/chat.service';
+import { LeadsService } from '../leads/leads.service';
 
 /**
  * Guest Chat API (API §2) — public, scoped by widget key, never trusting a
@@ -24,6 +26,7 @@ export class ChatController {
   constructor(
     private readonly prisma: PrismaService,
     private readonly chat: ChatService,
+    private readonly leads: LeadsService,
   ) {}
 
   // API §2.4 — GET /v1/chat/bootstrap
@@ -88,6 +91,40 @@ export class ChatController {
     } finally {
       res.end();
     }
+  }
+
+  // API §2.2 — POST /v1/chat/lead. `Idempotency-Key` is accepted per the spec
+  // (mirrors body.promptId) but not re-derived from — LeadsService's
+  // find-or-create-by-conversation is what actually makes a resubmission
+  // idempotent in effect; see its doc comment.
+  @Post('lead')
+  @HttpCode(201)
+  async lead(
+    @Headers('x-widget-key') widgetKey: string | undefined,
+    @Body()
+    body: {
+      conversationId?: string;
+      promptId?: string;
+      field?: unknown;
+      value?: unknown;
+      consent?: unknown;
+      declined?: unknown;
+    },
+  ) {
+    const hotelId = await this.resolveHotel(widgetKey);
+    if (!body?.conversationId || !body?.promptId) {
+      throw new BadRequestException(
+        'conversationId and promptId are required.',
+      );
+    }
+    return this.leads.submitAnswer(hotelId, {
+      conversationId: body.conversationId,
+      promptId: body.promptId,
+      field: body.field,
+      value: body.value,
+      consent: body.consent,
+      declined: body.declined,
+    });
   }
 
   private async resolveHotel(widgetKey: string | undefined): Promise<string> {
