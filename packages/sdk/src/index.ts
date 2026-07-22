@@ -19,6 +19,8 @@ import type {
   KnowledgeDocumentStageStatus,
   KnowledgeDocumentSummary,
   Paginated,
+  SubmitLeadAnswerRequest,
+  SubmitLeadAnswerResponse,
 } from "@hospitality/types";
 
 // Re-exported so frontend code has one import site for these shapes.
@@ -33,6 +35,8 @@ export type {
   KnowledgeDocumentStageStatus,
   KnowledgeDocumentSummary,
   Paginated,
+  SubmitLeadAnswerRequest,
+  SubmitLeadAnswerResponse,
 } from "@hospitality/types";
 
 /** Base URL of the api. Overridable for local dev / preview deploys. */
@@ -356,4 +360,27 @@ export async function sendChatMessage(
       }
     }
   }
+}
+
+// API §2.2 — POST /v1/chat/lead. Submits the guest's answer to a
+// `lead_prompt`, one field at a time (UX §4). `Idempotency-Key` matches
+// `promptId` per the spec — a resubmission (e.g. a double-tap) is safe to
+// retry with the same header/body.
+export async function submitLeadAnswer(
+  widgetKey: string,
+  request: SubmitLeadAnswerRequest,
+): Promise<SubmitLeadAnswerResponse> {
+  const res = await fetch(`${baseUrl()}/v1/chat/lead`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Widget-Key": widgetKey,
+      "Idempotency-Key": request.promptId,
+    },
+    body: JSON.stringify(request),
+  });
+  if (!res.ok) {
+    throw new Error(`lead submission failed: ${res.status}`);
+  }
+  return (await res.json()) as SubmitLeadAnswerResponse;
 }

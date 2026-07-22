@@ -29,6 +29,23 @@ const RECOMMENDATION_JOURNEY_STATES: readonly JourneyState[] = [
   'booking_intent',
 ];
 
+/** Lead capture (ABS §8) is signal-gated the same way a recommendation is —
+ * dates/occasion/comparison signals only ever arise in these two states,
+ * and asking for contact info during Information or (especially) Service
+ * Recovery would be exactly the tone-deaf, form-like intrusion ABS §8/§18
+ * warn against. */
+const LEAD_PROMPT_JOURNEY_STATES: readonly JourneyState[] = [
+  'planning',
+  'booking_intent',
+];
+
+/** UX §4's own worked example — a Yes/No confirmation, reason stated in the
+ * same breath, always precedes the first field ask. Kept generic (not
+ * occasion-specific) since the signal can also fire from a plain comparison
+ * (Playbook G-02), not just an occasion mention (G-05, G-18). */
+const LEAD_PROMPT_QUESTION =
+  'Would you like me to put together a tailored recommendation and send it your way?';
+
 /** Retrieve this many candidates, then keep the top N after reranking. */
 const RETRIEVAL_LIMIT = 8;
 const CONTEXT_TOP_N = 5;
@@ -276,6 +293,33 @@ export class ChatService {
       );
       if (cards.length > 0) {
         yield { type: 'card', cards };
+      }
+    }
+
+    // --- Lead capture prompt (API §2.1/§2.2 `lead_prompt` event, ABS §8, UX
+    // §4). Same journey-state/confidence gate as the recommendation above,
+    // plus: never ask twice in the same conversation (ABS §8: "if the guest
+    // declines, do not ask again" — generalized here to "don't re-offer at
+    // all once asked," since a Lead row's mere existence for this
+    // conversation is what remembers that). Only the Yes/No trigger is a
+    // server-pushed SSE event; every subsequent field-by-field step happens
+    // entirely inside `POST /v1/chat/lead`'s own request/response cycle
+    // (`nextField` tells the client what to ask next, API §2.2).
+    if (
+      band !== 'LOW' &&
+      classification.detectedSignals.leadCaptureWorthy &&
+      LEAD_PROMPT_JOURNEY_STATES.includes(classification.journeyState)
+    ) {
+      const alreadyAsked = await this.prisma.withTenant(params.hotelId, (tx) =>
+        tx.lead.findFirst({ where: { conversationId, deletedAt: null } }),
+      );
+      if (!alreadyAsked) {
+        yield {
+          type: 'lead_prompt',
+          promptId: `lp_${randomUUID().replace(/-/g, '')}`,
+          question: LEAD_PROMPT_QUESTION,
+          field: 'dates',
+        };
       }
     }
 
