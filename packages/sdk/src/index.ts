@@ -11,6 +11,10 @@ import type {
   ChatSSEEvent,
   CreateKnowledgeDocumentResponse,
   DocumentStatus,
+  EntityByParam,
+  EntityParam,
+  EntitySearchResult,
+  EntityType,
   KnowledgeChunkPreview,
   KnowledgeDocumentStageStatus,
   KnowledgeDocumentSummary,
@@ -22,6 +26,9 @@ export type {
   AdminSessionResponse,
   BootstrapResponse,
   CreateKnowledgeDocumentResponse,
+  EntityByParam,
+  EntityParam,
+  EntitySearchResult,
   KnowledgeChunkPreview,
   KnowledgeDocumentStageStatus,
   KnowledgeDocumentSummary,
@@ -157,6 +164,129 @@ export async function getKnowledgeDocumentChunks(
     throw new Error(`knowledge chunk preview failed: ${res.status}`);
   }
   return (await res.json()) as Paginated<KnowledgeChunkPreview>;
+}
+
+// ---------------------------------------------------------------------------
+// API §3.3 — Structured Entities. One uniform CRUD surface for all nine
+// entity types plus the bundle-builder typeahead; `type` is the kebab-case
+// route param (`room-types`, `spa-treatments`, ...) from `EntityByParam`.
+// ---------------------------------------------------------------------------
+
+export async function listEntities<T extends EntityParam>(
+  accessToken: string,
+  type: T,
+  opts: { hotelId?: string; cursor?: string; limit?: number } = {},
+): Promise<Paginated<EntityByParam[T]>> {
+  const params = new URLSearchParams();
+  if (opts.hotelId) params.set("hotelId", opts.hotelId);
+  if (opts.cursor) params.set("cursor", opts.cursor);
+  if (opts.limit) params.set("limit", String(opts.limit));
+  const qs = params.toString();
+  const res = await fetch(
+    `${baseUrl()}/v1/admin/entities/${type}${qs ? `?${qs}` : ""}`,
+    { headers: { Authorization: `Bearer ${accessToken}` } },
+  );
+  if (!res.ok) {
+    throw new Error(`entity list failed: ${res.status}`);
+  }
+  return (await res.json()) as Paginated<EntityByParam[T]>;
+}
+
+export async function getEntity<T extends EntityParam>(
+  accessToken: string,
+  type: T,
+  id: string,
+  opts: { hotelId?: string } = {},
+): Promise<EntityByParam[T]> {
+  const qs = opts.hotelId ? `?hotelId=${encodeURIComponent(opts.hotelId)}` : "";
+  const res = await fetch(`${baseUrl()}/v1/admin/entities/${type}/${id}${qs}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!res.ok) {
+    throw new Error(`entity fetch failed: ${res.status}`);
+  }
+  return (await res.json()) as EntityByParam[T];
+}
+
+export async function createEntity<T extends EntityParam>(
+  accessToken: string,
+  type: T,
+  data: Record<string, unknown>,
+  opts: { hotelId?: string } = {},
+): Promise<EntityByParam[T]> {
+  const qs = opts.hotelId ? `?hotelId=${encodeURIComponent(opts.hotelId)}` : "";
+  const res = await fetch(`${baseUrl()}/v1/admin/entities/${type}${qs}`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    throw new Error(`entity create failed: ${res.status}`);
+  }
+  return (await res.json()) as EntityByParam[T];
+}
+
+export async function updateEntity<T extends EntityParam>(
+  accessToken: string,
+  type: T,
+  id: string,
+  data: Record<string, unknown>,
+  opts: { hotelId?: string } = {},
+): Promise<EntityByParam[T]> {
+  const qs = opts.hotelId ? `?hotelId=${encodeURIComponent(opts.hotelId)}` : "";
+  const res = await fetch(
+    `${baseUrl()}/v1/admin/entities/${type}/${id}${qs}`,
+    {
+      method: "PATCH",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(data),
+    },
+  );
+  if (!res.ok) {
+    throw new Error(`entity update failed: ${res.status}`);
+  }
+  return (await res.json()) as EntityByParam[T];
+}
+
+export async function deleteEntity(
+  accessToken: string,
+  type: EntityParam,
+  id: string,
+  opts: { hotelId?: string } = {},
+): Promise<void> {
+  const qs = opts.hotelId ? `?hotelId=${encodeURIComponent(opts.hotelId)}` : "";
+  const res = await fetch(
+    `${baseUrl()}/v1/admin/entities/${type}/${id}${qs}`,
+    { method: "DELETE", headers: { Authorization: `Bearer ${accessToken}` } },
+  );
+  if (!res.ok) {
+    throw new Error(`entity delete failed: ${res.status}`);
+  }
+}
+
+/** Typeahead for the Relationship Bundle builder (UX §10). */
+export async function searchEntities(
+  accessToken: string,
+  opts: { q: string; types?: EntityType[]; hotelId?: string },
+): Promise<EntitySearchResult[]> {
+  const params = new URLSearchParams();
+  params.set("q", opts.q);
+  if (opts.types?.length) params.set("types", opts.types.join(","));
+  if (opts.hotelId) params.set("hotelId", opts.hotelId);
+  const res = await fetch(
+    `${baseUrl()}/v1/admin/entities/search?${params.toString()}`,
+    { headers: { Authorization: `Bearer ${accessToken}` } },
+  );
+  if (!res.ok) {
+    throw new Error(`entity search failed: ${res.status}`);
+  }
+  return (await res.json()) as EntitySearchResult[];
 }
 
 // API §2.4 — GET /v1/chat/bootstrap
