@@ -13,6 +13,7 @@ import type { Response } from 'express';
 import type { ChatSSEEvent } from '@hospitality/types';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { ChatService } from '../ai/chat.service';
+import { EscalationsService } from '../escalations/escalations.service';
 import { LeadsService } from '../leads/leads.service';
 
 /**
@@ -27,6 +28,7 @@ export class ChatController {
     private readonly prisma: PrismaService,
     private readonly chat: ChatService,
     private readonly leads: LeadsService,
+    private readonly escalationsService: EscalationsService,
   ) {}
 
   // API §2.4 — GET /v1/chat/bootstrap
@@ -124,6 +126,27 @@ export class ChatController {
       value: body.value,
       consent: body.consent,
       declined: body.declined,
+    });
+  }
+
+  // API §2.3 — POST /v1/chat/escalation/choose. Submits the guest's answer to
+  // an `escalation` event's handoff panel (UX §5).
+  @Post('escalation/choose')
+  @HttpCode(202)
+  async chooseEscalation(
+    @Headers('x-widget-key') widgetKey: string | undefined,
+    @Body()
+    body: {
+      escalationId?: unknown;
+      choice?: unknown;
+      contact?: unknown;
+    },
+  ) {
+    const hotelId = await this.resolveHotel(widgetKey);
+    return this.escalationsService.choose(hotelId, {
+      escalationId: body?.escalationId,
+      choice: body?.choice,
+      contact: body?.contact,
     });
   }
 

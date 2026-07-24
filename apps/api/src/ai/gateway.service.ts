@@ -105,6 +105,7 @@ const classifierSchema = z.object({
   detectedSignals: z.object({
     occasion: z.string().nullable(),
     leadCaptureWorthy: z.boolean(),
+    explicitHandoffRequest: z.boolean(),
   }),
 });
 
@@ -195,7 +196,11 @@ export class GatewayService {
       domain: [],
       persona: null,
       rewrittenQuery: message,
-      detectedSignals: { occasion: null, leadCaptureWorthy: false },
+      detectedSignals: {
+        occasion: null,
+        leadCaptureWorthy: false,
+        explicitHandoffRequest: false,
+      },
     };
   }
 }

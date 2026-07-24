@@ -200,6 +200,24 @@ export interface SubmitLeadAnswerResponse {
 }
 
 // ---------------------------------------------------------------------------
+// API §2.3 — POST /v1/chat/escalation/choose. Submits the guest's answer to
+// an `escalation` event's handoff panel (UX §5). `connect_now` is part of
+// the wire contract (ABS §7's two standard paths) but is rejected server-side
+// in V1 — no live-staff channel exists yet (`ChatEscalationEvent.
+// liveStaffAvailable` is always `false`), so it's never actually offered.
+// ---------------------------------------------------------------------------
+
+export interface SubmitEscalationChoiceRequest {
+  escalationId: string;
+  choice: "connect_now" | "contact_me";
+  contact?: { name?: string; email?: string; phone?: string } | null;
+}
+
+export interface SubmitEscalationChoiceResponse {
+  message: string;
+}
+
+// ---------------------------------------------------------------------------
 // AI Engine §2 — the classifier call's structured output.
 // ---------------------------------------------------------------------------
 
@@ -211,6 +229,11 @@ export interface ClassifierOutput {
   detectedSignals: {
     occasion: string | null;
     leadCaptureWorthy: boolean;
+    /** ABS §7's "explicit request" escalation trigger ("can I talk to a
+     * person") — distinct from `journeyState: "service_recovery"`, which
+     * already covers complaints/safety/legal/in-house-issue language on its
+     * own. A guest can ask for a human in any journey state. */
+    explicitHandoffRequest: boolean;
   };
 }
 
