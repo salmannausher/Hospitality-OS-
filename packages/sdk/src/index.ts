@@ -19,6 +19,8 @@ import type {
   KnowledgeDocumentStageStatus,
   KnowledgeDocumentSummary,
   Paginated,
+  SubmitEscalationChoiceRequest,
+  SubmitEscalationChoiceResponse,
   SubmitLeadAnswerRequest,
   SubmitLeadAnswerResponse,
 } from "@hospitality/types";
@@ -35,6 +37,8 @@ export type {
   KnowledgeDocumentStageStatus,
   KnowledgeDocumentSummary,
   Paginated,
+  SubmitEscalationChoiceRequest,
+  SubmitEscalationChoiceResponse,
   SubmitLeadAnswerRequest,
   SubmitLeadAnswerResponse,
 } from "@hospitality/types";
@@ -383,4 +387,24 @@ export async function submitLeadAnswer(
     throw new Error(`lead submission failed: ${res.status}`);
   }
   return (await res.json()) as SubmitLeadAnswerResponse;
+}
+
+// API §2.3 — POST /v1/chat/escalation/choose. Submits the guest's answer to
+// an `escalation` event's handoff panel (UX §5).
+export async function submitEscalationChoice(
+  widgetKey: string,
+  request: SubmitEscalationChoiceRequest,
+): Promise<SubmitEscalationChoiceResponse> {
+  const res = await fetch(`${baseUrl()}/v1/chat/escalation/choose`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Widget-Key": widgetKey,
+    },
+    body: JSON.stringify(request),
+  });
+  if (!res.ok) {
+    throw new Error(`escalation choice submission failed: ${res.status}`);
+  }
+  return (await res.json()) as SubmitEscalationChoiceResponse;
 }

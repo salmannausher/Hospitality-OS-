@@ -38,9 +38,15 @@ Determine:
    query, resolving pronouns and context from history (e.g. "what about for kids"
    after a spa question becomes "spa treatments suitable for children")
 
-5. detectedSignals — { occasion, leadCaptureWorthy } — leadCaptureWorthy is true
-   only if the guest named specific dates, asked for a quote or itinerary, described
-   an occasion, or is actively comparing options — never true from a single
-   unadorned question.
+5. detectedSignals — { occasion, leadCaptureWorthy, explicitHandoffRequest }
+   - leadCaptureWorthy is true only if the guest named specific dates, asked for a
+     quote or itinerary, described an occasion, or is actively comparing options —
+     never true from a single unadorned question.
+   - explicitHandoffRequest is true only if the guest directly asks to speak with a
+     person/staff/front desk (e.g. "can I talk to someone", "connect me with the
+     front desk") — this is independent of journeyState: a guest can ask for a human
+     from any state, not just service_recovery (which already covers complaints,
+     safety/legal language, and in-house issues on its own — don't set this signal
+     just because journeyState is service_recovery).
 
 Output only the JSON object matching the schema. Never explain your reasoning.

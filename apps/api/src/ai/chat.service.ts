@@ -4,10 +4,12 @@ import type { Prisma } from '@prisma/client';
 import type {
   BootstrapResponse,
   ChatSSEEvent,
+  ClassifierOutput,
   ConfidenceBand,
   JourneyState,
 } from '@hospitality/types';
 import { PrismaService } from '../common/prisma/prisma.service';
+import { EscalationsService } from '../escalations/escalations.service';
 import { CardAssemblyService } from './card-assembly.service';
 import { EmbeddingsService } from './embeddings.service';
 import { GatewayService } from './gateway.service';
@@ -19,6 +21,26 @@ import {
   confidenceScore,
   rerankScore,
 } from './scoring';
+
+/** A trigger detectable BEFORE retrieval/generation ever run (ABS §7: "these
+ * go to staff immediately, no AI attempt at resolution") — `journeyState:
+ * service_recovery` already folds in complaints/safety/legal/in-house-issue
+ * language (the classifier prompt's own instruction), so only the one
+ * independent signal (an explicit ask for a human) needs checking separately. */
+type PreAnswerEscalationReason = 'service_recovery' | 'explicit_request';
+
+/** One-sentence, in-character acknowledgments (ABS §7 point 1: "no dead air,
+ * no 'processing' language") — never a troubleshooting attempt, never the
+ * Low-Confidence copy (that's about not knowing an answer; this is about a
+ * real problem or a direct ask, both handled identically once triggered). */
+const PRE_ANSWER_ESCALATION_ACKNOWLEDGMENTS: Record<
+  PreAnswerEscalationReason,
+  string
+> = {
+  service_recovery:
+    "I'm very sorry to hear that — let me connect you with our team right away so they can look into this for you.",
+  explicit_request: 'Of course — let me connect you with our team right away.',
+};
 
 /** Journey states in which a recommendation is ever appropriate (ABS §16/§18)
  * — never Information (answer only, no upsell needed) and never, ever,
@@ -105,6 +127,7 @@ export class ChatService {
     private readonly prompts: PromptsService,
     private readonly retrieval: RetrievalService,
     private readonly cardAssembly: CardAssemblyService,
+    private readonly escalations: EscalationsService,
   ) {}
 
   /** GET /v1/chat/bootstrap (API §2.4). One round trip to render the launcher. */
@@ -144,14 +167,17 @@ export class ChatService {
 
   /**
    * POST /v1/chat/message (API §2.1). Yields the SSE event stream in protocol
-   * order: ack → delta* → card? → done. `card` fires at most once, only after
-   * the final `delta` (API §2.1's ordering guarantee — the answer always
-   * completes before any side action, ABS §18) and only in the Planning /
-   * Booking Intent journey states (ABS §16/§9), never Information (no upsell
-   * needed) and never Service Recovery (ABS §19 forbids it outright).
-   * Follows the guest-message pipeline (Architecture §4): classify → embed →
-   * retrieve → rerank → confidence → (Low: honest fallback | else: grounded
-   * generation) → recommendation bundle.
+   * order: ack → delta* → (escalation | card? and/or lead_prompt?) → done.
+   * `escalation` and `card`/`lead_prompt` are mutually exclusive within a
+   * turn — once any ABS §7 trigger fires (explicit request, Service Recovery,
+   * or Low Confidence), card/lead_prompt are skipped entirely for that turn
+   * (ABS §19, §8). `card` and `lead_prompt` themselves fire only in the
+   * Planning/Booking Intent journey states (ABS §16/§9/§18), never
+   * Information. Follows the guest-message pipeline (Architecture §4):
+   * classify → (escalation trigger? skip to acknowledgment) → embed →
+   * retrieve → rerank → confidence → (Low: honest fallback, itself an
+   * escalation trigger | else: grounded generation) → recommendation bundle
+   * + lead capture.
    */
   async *streamTurn(params: {
     hotelId: string;
@@ -182,144 +208,186 @@ export class ChatService {
       historyText,
     );
 
-    // --- Embed + retrieve + rerank (steps 3–5). Degrade to unrewritten query on embed failure.
-    let ranked: RetrievedChunk[] = [];
-    try {
-      const queryEmbedding = await this.embeddings.embedQuery(
-        classification.rewrittenQuery || params.message,
-      );
-      ranked = await this.prisma.withTenant(params.hotelId, async (tx) => {
-        const chunks = await this.retrieval.retrieve(tx, {
-          queryEmbedding,
-          domains: classification.domain,
-          limit: RETRIEVAL_LIMIT,
-        });
-        const now = new Date();
-        return [...chunks].sort(
-          (a, b) =>
-            rerankScore(
-              {
-                similarity: b.similarity,
-                priority: b.priority,
-                lastVerifiedAt: b.lastVerifiedAt,
-              },
-              now,
-            ) -
-            rerankScore(
-              {
-                similarity: a.similarity,
-                priority: a.priority,
-                lastVerifiedAt: a.lastVerifiedAt,
-              },
-              now,
-            ),
-        );
-      });
-    } catch (err) {
-      this.logger.warn(
-        `Retrieval degraded: ${String((err as Error)?.message ?? err)}`,
-      );
-    }
-
-    const topChunks = ranked.slice(0, CONTEXT_TOP_N);
-
-    // --- Confidence (step 6) — computed BEFORE generation (AI Engine §5).
-    const similarities = ranked.map((c) => c.similarity);
-    const score = confidenceScore({
-      topSimilarity: similarities[0] ?? 0,
-      agreement: chunkAgreement(similarities),
-      classifierCertainty: degraded ? CERTAINTY_DEGRADED : CERTAINTY_HEALTHY,
-    });
-    const band = confidenceBand(score);
-
-    // --- Answer (step 7). Low confidence → honest fallback, NO generation call.
+    // --- Escalation trigger check (ABS §7), evaluated BEFORE retrieval/
+    // generation: two of the three triggers mean skipping both entirely
+    // ("no AI attempt at resolution" for Service Recovery / an explicit
+    // request). The third (Low Confidence) can only be known after retrieval
+    // + scoring, so it's assigned further down instead.
+    const preAnswerReason = this.detectPreAnswerEscalation(classification);
+    let escalationReason: PreAnswerEscalationReason | 'low_confidence' | null =
+      preAnswerReason;
+    let band: ConfidenceBand;
     let answer = '';
-    if (band === 'LOW' || topChunks.length === 0) {
-      answer = LOW_CONFIDENCE_FALLBACK;
+
+    if (preAnswerReason) {
+      // ABS §7 point 1: acknowledge in one sentence, no troubleshooting, no
+      // dead air — then straight to the escalation event below.
+      answer = PRE_ANSWER_ESCALATION_ACKNOWLEDGMENTS[preAnswerReason];
       yield { type: 'delta', text: answer };
+      // Retrieval never ran, so there's no similarity signal to score — LOW is
+      // still the accurate band: no confident automated answer was given.
+      band = 'LOW';
     } else {
-      const systemPrompt = await this.buildSystemPrompt({
-        hotelId: params.hotelId,
-        topChunks,
-        historyText,
-      });
-      const result = this.gateway.streamGeneration({
-        systemPrompt,
-        message: params.message,
-      });
+      // --- Embed + retrieve + rerank (steps 3–5). Degrade to unrewritten query on embed failure.
+      let ranked: RetrievedChunk[] = [];
       try {
-        for await (const delta of result.textStream) {
-          answer += delta;
-          yield { type: 'delta', text: delta };
-        }
+        const queryEmbedding = await this.embeddings.embedQuery(
+          classification.rewrittenQuery || params.message,
+        );
+        ranked = await this.prisma.withTenant(params.hotelId, async (tx) => {
+          const chunks = await this.retrieval.retrieve(tx, {
+            queryEmbedding,
+            domains: classification.domain,
+            limit: RETRIEVAL_LIMIT,
+          });
+          const now = new Date();
+          return [...chunks].sort(
+            (a, b) =>
+              rerankScore(
+                {
+                  similarity: b.similarity,
+                  priority: b.priority,
+                  lastVerifiedAt: b.lastVerifiedAt,
+                },
+                now,
+              ) -
+              rerankScore(
+                {
+                  similarity: a.similarity,
+                  priority: a.priority,
+                  lastVerifiedAt: a.lastVerifiedAt,
+                },
+                now,
+              ),
+          );
+        });
       } catch (err) {
-        this.logger.error(
-          `Generation threw: ${String((err as Error)?.message ?? err)}`,
+        this.logger.warn(
+          `Retrieval degraded: ${String((err as Error)?.message ?? err)}`,
         );
       }
-      // The AI SDK surfaces stream errors via onError, not by throwing in the
-      // for-await — check both. Empty answer + an error → graceful fallback
-      // (AI Engine §8 / UX §13), never a silent empty turn.
-      if (result.getError() && answer.length === 0) {
-        yield {
-          type: 'error',
-          error: {
-            code: 'GENERATION_FAILED',
-            message: 'The concierge is momentarily unavailable.',
-            requestId: conversationId,
-          },
-        };
-        return;
+
+      const topChunks = ranked.slice(0, CONTEXT_TOP_N);
+
+      // --- Confidence (step 6) — computed BEFORE generation (AI Engine §5).
+      const similarities = ranked.map((c) => c.similarity);
+      const score = confidenceScore({
+        topSimilarity: similarities[0] ?? 0,
+        agreement: chunkAgreement(similarities),
+        classifierCertainty: degraded ? CERTAINTY_DEGRADED : CERTAINTY_HEALTHY,
+      });
+      band = confidenceBand(score);
+
+      // --- Answer (step 7). Low confidence → honest fallback, NO generation
+      // call, and — per ABS §5 — this band uses the escalation pattern too.
+      if (band === 'LOW' || topChunks.length === 0) {
+        answer = LOW_CONFIDENCE_FALLBACK;
+        yield { type: 'delta', text: answer };
+        escalationReason = 'low_confidence';
+      } else {
+        const systemPrompt = await this.buildSystemPrompt({
+          hotelId: params.hotelId,
+          topChunks,
+          historyText,
+        });
+        const result = this.gateway.streamGeneration({
+          systemPrompt,
+          message: params.message,
+        });
+        try {
+          for await (const delta of result.textStream) {
+            answer += delta;
+            yield { type: 'delta', text: delta };
+          }
+        } catch (err) {
+          this.logger.error(
+            `Generation threw: ${String((err as Error)?.message ?? err)}`,
+          );
+        }
+        // The AI SDK surfaces stream errors via onError, not by throwing in the
+        // for-await — check both. Empty answer + an error → graceful fallback
+        // (AI Engine §8 / UX §13), never a silent empty turn.
+        if (result.getError() && answer.length === 0) {
+          yield {
+            type: 'error',
+            error: {
+              code: 'GENERATION_FAILED',
+              message: 'The concierge is momentarily unavailable.',
+              requestId: conversationId,
+            },
+          };
+          return;
+        }
       }
     }
 
-    // --- Recommendation bundle (API §2.1 `card` event, IA §12). Only after
-    // the answer is complete (never instead of it — ABS §18), only in a
-    // journey state where recommending is appropriate, and never on the
-    // Low-Confidence fallback path (an unconfident answer earns no upsell).
-    // `contextTag` prefers the guest's own quick-start tap (UX §2) over the
-    // classifier's free-text occasion signal, since a tapped chip is the more
-    // explicit of the two.
-    const contextTag =
-      params.contextTag || classification.detectedSignals.occasion;
-    if (
-      band !== 'LOW' &&
-      contextTag &&
-      RECOMMENDATION_JOURNEY_STATES.includes(classification.journeyState)
-    ) {
-      const cards = await this.cardAssembly.buildCards(
+    if (escalationReason) {
+      // --- Escalation (API §2.1 `escalation` event, ABS §7). Fires at most
+      // once, after the acknowledgment/fallback delta, and — critically —
+      // this branch is the ONLY reason card/lead_prompt below don't run: ABS
+      // §19 forbids any recommendation once escalation has fired, and ABS §8
+      // folds contact capture into the handoff itself rather than a separate ask.
+      const escalationId = await this.escalations.create(
         params.hotelId,
-        contextTag,
+        conversationId,
+        escalationReason,
       );
-      if (cards.length > 0) {
-        yield { type: 'card', cards };
+      yield {
+        type: 'escalation',
+        escalationId,
+        reason: escalationReason,
+        // No live-staff channel exists in V1 (Architecture/API §5) — only ever
+        // offer the path that's actually real, never a dead "connect now" button.
+        options: ['contact_me'],
+        liveStaffAvailable: false,
+      };
+    } else {
+      // --- Recommendation bundle (API §2.1 `card` event, IA §12). Only after
+      // the answer is complete (never instead of it — ABS §18), only in a
+      // journey state where recommending is appropriate. `contextTag` prefers
+      // the guest's own quick-start tap (UX §2) over the classifier's
+      // free-text occasion signal, since a tapped chip is the more explicit
+      // of the two.
+      const contextTag =
+        params.contextTag || classification.detectedSignals.occasion;
+      if (
+        contextTag &&
+        RECOMMENDATION_JOURNEY_STATES.includes(classification.journeyState)
+      ) {
+        const cards = await this.cardAssembly.buildCards(
+          params.hotelId,
+          contextTag,
+        );
+        if (cards.length > 0) {
+          yield { type: 'card', cards };
+        }
       }
-    }
 
-    // --- Lead capture prompt (API §2.1/§2.2 `lead_prompt` event, ABS §8, UX
-    // §4). Same journey-state/confidence gate as the recommendation above,
-    // plus: never ask twice in the same conversation (ABS §8: "if the guest
-    // declines, do not ask again" — generalized here to "don't re-offer at
-    // all once asked," since a Lead row's mere existence for this
-    // conversation is what remembers that). Only the Yes/No trigger is a
-    // server-pushed SSE event; every subsequent field-by-field step happens
-    // entirely inside `POST /v1/chat/lead`'s own request/response cycle
-    // (`nextField` tells the client what to ask next, API §2.2).
-    if (
-      band !== 'LOW' &&
-      classification.detectedSignals.leadCaptureWorthy &&
-      LEAD_PROMPT_JOURNEY_STATES.includes(classification.journeyState)
-    ) {
-      const alreadyAsked = await this.prisma.withTenant(params.hotelId, (tx) =>
-        tx.lead.findFirst({ where: { conversationId, deletedAt: null } }),
-      );
-      if (!alreadyAsked) {
-        yield {
-          type: 'lead_prompt',
-          promptId: `lp_${randomUUID().replace(/-/g, '')}`,
-          question: LEAD_PROMPT_QUESTION,
-          field: 'dates',
-        };
+      // --- Lead capture prompt (API §2.1/§2.2 `lead_prompt` event, ABS §8, UX
+      // §4). Never ask twice in the same conversation (ABS §8: "if the guest
+      // declines, do not ask again" — generalized here to "don't re-offer at
+      // all once asked," since a Lead row's mere existence for this
+      // conversation is what remembers that). Only the Yes/No trigger is a
+      // server-pushed SSE event; every subsequent field-by-field step happens
+      // entirely inside `POST /v1/chat/lead`'s own request/response cycle
+      // (`nextField` tells the client what to ask next, API §2.2).
+      if (
+        classification.detectedSignals.leadCaptureWorthy &&
+        LEAD_PROMPT_JOURNEY_STATES.includes(classification.journeyState)
+      ) {
+        const alreadyAsked = await this.prisma.withTenant(
+          params.hotelId,
+          (tx) =>
+            tx.lead.findFirst({ where: { conversationId, deletedAt: null } }),
+        );
+        if (!alreadyAsked) {
+          yield {
+            type: 'lead_prompt',
+            promptId: `lp_${randomUUID().replace(/-/g, '')}`,
+            question: LEAD_PROMPT_QUESTION,
+            field: 'dates',
+          };
+        }
       }
     }
 
@@ -344,6 +412,29 @@ export class ChatService {
   }
 
   // ---------------------------------------------------------------------------
+
+  /** ABS §7's triggers that are knowable immediately from the classifier's
+   * output, before any retrieval/generation runs. `service_recovery` already
+   * covers complaints, safety/medical/legal language, and in-house guest
+   * issues — the classifier prompt folds all of those into that one journey
+   * state. `explicitHandoffRequest` is the one signal independent of journey
+   * state (a guest can ask for a human while just browsing). Group/event size
+   * thresholds are a real ABS §7 trigger too, but "configurable size
+   * threshold" implies a per-hotel setting that doesn't exist anywhere in the
+   * schema yet — a genuine gap, not implemented here rather than guessing a
+   * hardcoded number.
+   */
+  private detectPreAnswerEscalation(
+    classification: ClassifierOutput,
+  ): PreAnswerEscalationReason | null {
+    if (classification.journeyState === 'service_recovery') {
+      return 'service_recovery';
+    }
+    if (classification.detectedSignals.explicitHandoffRequest) {
+      return 'explicit_request';
+    }
+    return null;
+  }
 
   private async openTurn(
     tx: Prisma.TransactionClient,
