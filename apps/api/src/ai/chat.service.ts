@@ -289,6 +289,8 @@ export class ChatService {
           hotelId: params.hotelId,
           topChunks,
           historyText,
+          domain: classification.domain,
+          persona: classification.persona,
         });
         const result = this.gateway.streamGeneration({
           systemPrompt,
@@ -506,6 +508,8 @@ export class ChatService {
     hotelId: string;
     topChunks: RetrievedChunk[];
     historyText: string;
+    domain: ClassifierOutput['domain'];
+    persona: ClassifierOutput['persona'];
   }): Promise<string> {
     const { hotelName, conciergeName, tone } = await this.prisma.withTenant(
       input.hotelId,
@@ -533,6 +537,8 @@ export class ChatService {
       hotelName,
       formalityLevel: tone.formalityLevel,
       brandAdjectives: tone.brandAdjectives,
+      domain: input.domain,
+      persona: input.persona,
       ragContext: ragContext || '(no indexed content matched this question)',
       messageHistory: input.historyText || '(this is the first message)',
     });
