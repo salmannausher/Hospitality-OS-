@@ -28,6 +28,21 @@ export type JourneyState =
 
 export type ConfidenceBand = "HIGH" | "MEDIUM" | "LOW";
 
+// Playbook §6 — a second, complementary axis to JourneyState: where the guest
+// sits in the overall arc of THIS TRIP (can span the whole conversation),
+// not what this one message needs right now. Drives the `cta` event's
+// lifecycle-stage logic (UX §6) — inferred from explicit language ("we
+// already booked", "we're checking in today") per the classifier prompt,
+// same as any other detectedSignal; "researching" is the neutral default
+// when nothing explicit has been said either way.
+export type LifecycleStage =
+  | "dreaming"
+  | "researching"
+  | "comparing"
+  | "booking"
+  | "preparing"
+  | "staying";
+
 export type Domain =
   | "accommodation"
   | "booking"
@@ -234,6 +249,8 @@ export interface ClassifierOutput {
      * already covers complaints/safety/legal/in-house-issue language on its
      * own. A guest can ask for a human in any journey state. */
     explicitHandoffRequest: boolean;
+    /** Playbook §6's Trip Lifecycle Stage — independent of `journeyState`. */
+    lifecycleStage: LifecycleStage;
   };
 }
 
