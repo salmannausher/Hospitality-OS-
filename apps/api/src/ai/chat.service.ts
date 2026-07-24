@@ -6,11 +6,13 @@ import type {
   ChatSSEEvent,
   ClassifierOutput,
   ConfidenceBand,
+  CtaKind,
   JourneyState,
 } from '@hospitality/types';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { EscalationsService } from '../escalations/escalations.service';
 import { CardAssemblyService } from './card-assembly.service';
+import { ctaForLifecycleStage } from './cta';
 import { EmbeddingsService } from './embeddings.service';
 import { GatewayService } from './gateway.service';
 import { PromptsService } from './prompts.service';
@@ -393,6 +395,21 @@ export class ChatService {
       }
     }
 
+    // --- CTA (API §2.1 `cta` event, UX §6). Unconditional — every turn gets
+    // exactly one, unlike card/lead_prompt/escalation which are conditional
+    // on signals. Orthogonal to the escalation branch above: even a
+    // Service-Recovery/escalated turn gets a CTA (request_assistance, per the
+    // Staying-stage row of UX §6's own table — that IS the escalation-
+    // appropriate CTA, not something escalation should suppress).
+    const ctaKind = ctaForLifecycleStage(
+      classification.detectedSignals.lifecycleStage,
+    );
+    yield {
+      type: 'cta',
+      kind: ctaKind,
+      url: await this.resolveCtaUrl(params.hotelId, ctaKind),
+    };
+
     // --- Persist concierge turn + log metadata (step 9).
     const messageId = await this.prisma.withTenant(params.hotelId, async (tx) =>
       this.persistConciergeTurn(tx, {
@@ -436,6 +453,31 @@ export class ChatService {
       return 'explicit_request';
     }
     return null;
+  }
+
+  /**
+   * The `cta` event's `url` (API §2.1, UX §6). `BrandSettings.bookingEngineUrl`
+   * is the one hotel-configurable link in the schema (added alongside this
+   * ticket, discussed with the user first — no booking-engine integration
+   * exists, PRD §19, so this is a plain admin-set external URL, not derived
+   * from anything else). `book_now`/`explore_rooms` both point to it — most
+   * real hotel sites route both into the same booking engine, just different
+   * funnel framing. `plan_my_stay` falls back to the same URL as an honest
+   * interim decision (many booking engines expose a "manage my booking" area
+   * from the same domain) — a dedicated itinerary/local-guide URL is a real
+   * gap, not solved here. `request_assistance` is never a real link — UX §6
+   * frames it as routing "toward escalation/staff, not marketing," meant to
+   * trigger the widget's own escalation UI once one exists, not link out.
+   * Unconfigured (`bookingEngineUrl` null) → empty string, never a fake link.
+   */
+  private async resolveCtaUrl(hotelId: string, kind: CtaKind): Promise<string> {
+    if (kind === 'request_assistance') return '';
+    const bookingEngineUrl = await this.prisma.withTenant(hotelId, (tx) =>
+      tx.brandSettings
+        .findUnique({ where: { hotelId } })
+        .then((b) => b?.bookingEngineUrl ?? null),
+    );
+    return bookingEngineUrl ?? '';
   }
 
   private async openTurn(

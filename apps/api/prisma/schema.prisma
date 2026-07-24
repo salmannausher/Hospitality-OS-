@@ -159,6 +159,12 @@ model BrandSettings {
   primaryColor   String?
   secondaryColor String?
   fontFamily     String?
+  /// The hotel's external booking engine — Sprint 3's `cta` event (API §2.1,
+  /// UX §6) links `book_now` and `explore_rooms` here. No booking-engine
+  /// integration exists (PRD §19: "the cta event links out — nothing to
+  /// POST"), so this is a plain external URL, admin-configured, not derived
+  /// from anything else in the schema.
+  bookingEngineUrl String?
 
   updatedAt DateTime @updatedAt
 }

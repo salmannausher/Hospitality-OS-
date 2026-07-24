@@ -106,6 +106,14 @@ const classifierSchema = z.object({
     occasion: z.string().nullable(),
     leadCaptureWorthy: z.boolean(),
     explicitHandoffRequest: z.boolean(),
+    lifecycleStage: z.enum([
+      'dreaming',
+      'researching',
+      'comparing',
+      'booking',
+      'preparing',
+      'staying',
+    ]),
   }),
 });
 
@@ -200,6 +208,9 @@ export class GatewayService {
         occasion: null,
         leadCaptureWorthy: false,
         explicitHandoffRequest: false,
+        // A degraded classifier gives no lifecycle signal either — "researching"
+        // is the same neutral default the prompt itself uses when genuinely ambiguous.
+        lifecycleStage: 'researching',
       },
     };
   }
