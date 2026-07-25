@@ -40,23 +40,11 @@ Grading is a human (agent) read of each real transcript against the scenario's o
 
 ## Findings
 
-### 1. Card/text divergence (G-05) — the two recommendation surfaces don't cross-reference each other — **FIXED 2026-07-26**
+Full problem/root-cause/fix write-ups now live in the [Findings & Blockers Log](findings-log.md) (single source of truth, not duplicated here):
 
-The `card` event correctly returned the exact seeded `anniversary` bundle (Ocean View Suite + **The Rooftop at Bellevue** + Couples Massage) — proving `CardAssemblyService` (ticket 2) works exactly as designed. But the **generated answer text** recommended a different restaurant, **The Terrace**, for dinner. The guest would see a card naming one restaurant and read a paragraph naming another in the same turn.
-
-Root cause: card assembly (`EntityRelationship` lookup) and answer generation (vector retrieval → RAG context) were two independent systems with no cross-referencing between them. Retrieval didn't know what the card mechanism picked, and vice versa. This is a sharper version of the exact failure mode [IA §12](03-information-architecture.md) warns the relationship layer exists to prevent ("not three independent lookups concatenated") — except here it was the card that was correct and the *prose* that drifted, which is arguably harder to notice than three disjointed pitches would have been.
-
-**Fix:** `ChatService` (`apps/api/src/ai/chat.service.ts`) now resolves the relationship bundle *before* generation (not after) and, when one fires, injects a "you must recommend precisely these entities" instruction into the system prompt (folded into the existing `{{rag_context}}` slot, not a new `base.md` placeholder — `base.md`/ABS §14 is a shared prompt-template contract, out of scope for a targeted fix). The already-resolved bundle is reused for the `card` event itself, rather than queried a second time. Live-verified reproducing the exact G-05 scenario (`apps/api/verify-card-text-consistency.mjs`) — the text now names "The Rooftop at Bellevue," matching the card. All five existing chat-pipeline verify scripts (cards, lead capture, escalation, cta, prompt modules) re-run clean, zero regressions.
-
-### 2. Escalation fires for the wrong documented reason (G-09, G-10)
-
-Both wedding/events scenarios escalated — but via the `low_confidence` trigger (because Bellevue has zero indexed `events`-domain content, so retrieval returns empty), not via the ABS §7 "group/event size threshold" trigger, which [ticket 5](14-sprint-backlog.md) already flagged as unbuilt (no per-hotel configurable threshold exists in the schema). The guest isn't left hanging either way — an escalation does fire — but the response never shares any `Event Space` capacity/AV facts the scenario expects, because none are seeded, and the reason logged on the `Escalation` row (`low_confidence`) doesn't reflect the actual cause (a high-value group inquiry), which would misdirect any reason-based analytics query (API §3.6's planned "grouped by structured `reason`" escalations view). Two compounding, already-partially-known gaps: the real trigger is unbuilt, and there's no `events`-domain content to ground a helpful answer with even if it were.
-
-### 3. `base.md` never received ABS §10's refusal-table content (G-12)
-
-Confirmed by direct comparison: [ABS §14](02-ai-behavior-specification.md)'s system prompt template — which `packages/prompts/base.md` correctly and deliberately copies verbatim (Prompt 0's own instruction) — never included ABS §10's refusal rules (competitor comparisons, prompt-extraction, medical/legal/financial, harassment) or the ABS §19 forbidden-behaviors checklist anywhere in its text. This isn't a code bug — the prompt template faithfully matches its own spec section — but it's a **real gap between two spec sections that was never reconciled**: §10 and §19 document required refusal behaviors that the one section actually wired into the running system prompt (§14) never mentions.
-
-G-12 makes the gap concrete: the competitor-comparison question happened to score Low Confidence on retrieval (a "Four Seasons" question doesn't match hotel-content chunks well) and never even reached generation, so the model never got a chance to apply *either* an explicit instruction (none exists) *or* its own default judgment. G-13 (prompt extraction) reached generation and the model declined correctly — but on its own default alignment, not an explicit rule, so that success is incidental, not guaranteed by anything this system actually specifies. **Not fixed in this pass** — expanding `base.md`/`ABS §14` to include §10/§19's rules is a deliberate prompt-content decision (and a registry/Playbook-coverage update), not a silent patch to make during a QA run.
+1. **Card/text divergence (G-05)** — the `card` event and the generated text could name different entities in the same turn. **Fixed 2026-07-26** — see [Findings Log #8](findings-log.md).
+2. **Escalation fires for the wrong documented reason (G-09, G-10)** — wedding/events inquiries escalate via `low_confidence` (empty `events`-domain retrieval), not the real, still-unbuilt group/event-size threshold. **Open** — see [Findings Log #9](findings-log.md).
+3. **`base.md` never received ABS §10/§19's refusal-table content (G-12)** — a real, previously-unreconciled gap between two spec sections, exposed when a competitor-comparison scenario never even reached generation. **Open** — see [Findings Log #10](findings-log.md).
 
 ## What this run does NOT cover
 
