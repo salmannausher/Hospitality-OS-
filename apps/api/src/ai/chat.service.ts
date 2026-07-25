@@ -29,8 +29,21 @@ import {
  * go to staff immediately, no AI attempt at resolution") — `journeyState:
  * service_recovery` already folds in complaints/safety/legal/in-house-issue
  * language (the classifier prompt's own instruction), so only the one
- * independent signal (an explicit ask for a human) needs checking separately. */
+ * independent signal (an explicit ask for a human) needs checking separately.
+ * Deliberately does NOT include the group/event-size threshold (findings-log.md
+ * #9): unlike these two, Playbook G-09's own expected behavior wants the
+ * concierge to actually engage first (share capacity facts, ask a clarifying
+ * question via `wedding.md`) before handing off — generation still runs for
+ * that trigger, so it's evaluated separately, after the answer exists. */
 type PreAnswerEscalationReason = 'service_recovery' | 'explicit_request';
+
+/** Every reason an `escalation` event can fire for, pre-answer or not. */
+type EscalationReason =
+  PreAnswerEscalationReason | 'low_confidence' | 'group_size_threshold';
+
+/** Fallback if a hotel's `BrandSettings` row is somehow missing — matches the
+ * schema's own default (migration `8_brand_settings_group_threshold`). */
+const DEFAULT_GROUP_INQUIRY_THRESHOLD = 15;
 
 /** One-sentence, in-character acknowledgments (ABS §7 point 1: "no dead air,
  * no 'processing' language") — never a troubleshooting attempt, never the
@@ -173,14 +186,15 @@ export class ChatService {
    * order: ack → delta* → (escalation | card? and/or lead_prompt?) → done.
    * `escalation` and `card`/`lead_prompt` are mutually exclusive within a
    * turn — once any ABS §7 trigger fires (explicit request, Service Recovery,
-   * or Low Confidence), card/lead_prompt are skipped entirely for that turn
-   * (ABS §19, §8). `card` and `lead_prompt` themselves fire only in the
-   * Planning/Booking Intent journey states (ABS §16/§9/§18), never
-   * Information. Follows the guest-message pipeline (Architecture §4):
-   * classify → (escalation trigger? skip to acknowledgment) → embed →
-   * retrieve → rerank → confidence → (Low: honest fallback, itself an
-   * escalation trigger | else: grounded generation) → recommendation bundle
-   * + lead capture.
+   * Low Confidence, or a group/event inquiry over the hotel's configured size
+   * threshold), card/lead_prompt are skipped entirely for that turn (ABS §19,
+   * §8). `card` and `lead_prompt` themselves fire only in the Planning/
+   * Booking Intent journey states (ABS §16/§9/§18), never Information.
+   * Follows the guest-message pipeline (Architecture §4): classify →
+   * (Service Recovery/explicit request? skip straight to acknowledgment) →
+   * embed → retrieve → rerank → confidence → (Low: honest fallback, itself an
+   * escalation trigger | else: grounded generation, then check the
+   * group-size threshold on top) → recommendation bundle + lead capture.
    */
   async *streamTurn(params: {
     hotelId: string;
@@ -217,10 +231,21 @@ export class ChatService {
     // request). The third (Low Confidence) can only be known after retrieval
     // + scoring, so it's assigned further down instead.
     const preAnswerReason = this.detectPreAnswerEscalation(classification);
-    let escalationReason: PreAnswerEscalationReason | 'low_confidence' | null =
-      preAnswerReason;
+    let escalationReason: EscalationReason | null = preAnswerReason;
     let band: ConfidenceBand;
     let answer = '';
+    // ABS §7's group/event-size threshold (findings-log.md #9) — checked only
+    // when nothing more urgent already fired (service_recovery/explicit_request
+    // take priority per the classifier prompt's own instruction), since the
+    // stronger triggers mean generation never even runs, making this moot.
+    // Computed once here (not inline in both branches below) since it's the
+    // SAME check whether the eventual reason ends up next to a real generated
+    // answer or the honest Low-Confidence fallback.
+    const groupSize = classification.detectedSignals.groupSize;
+    const groupSizeExceeded =
+      !preAnswerReason && groupSize != null
+        ? await this.exceedsGroupSizeThreshold(params.hotelId, groupSize)
+        : false;
     // `contextTag` prefers the guest's own quick-start tap (UX §2) over the
     // classifier's free-text occasion signal, since a tapped chip is the more
     // explicit of the two. Computed once, up front, since both the bundle
@@ -302,7 +327,14 @@ export class ChatService {
       if (band === 'LOW' || topChunks.length === 0) {
         answer = LOW_CONFIDENCE_FALLBACK;
         yield { type: 'delta', text: answer };
-        escalationReason = 'low_confidence';
+        // `group_size_threshold` is the more specific, structured reason —
+        // report it over `low_confidence` when both apply (findings-log.md
+        // #9's whole point: the logged reason should reflect the real cause,
+        // e.g. a 120-guest wedding inquiry against a hotel with no indexed
+        // `events` content, not an incidental empty-retrieval side effect).
+        escalationReason = groupSizeExceeded
+          ? 'group_size_threshold'
+          : 'low_confidence';
       } else {
         if (
           contextTag &&
@@ -348,6 +380,15 @@ export class ChatService {
             },
           };
           return;
+        }
+
+        // A real, grounded answer was just given (Playbook G-09's own
+        // expectation: share capacity/facts, ask a clarifying question — not
+        // "zero AI attempt" like service_recovery/explicit_request) — the
+        // group-size threshold only adds the escalation on top, it never
+        // replaces the answer that already streamed.
+        if (groupSizeExceeded) {
+          escalationReason = 'group_size_threshold';
         }
       }
     }
@@ -452,12 +493,10 @@ export class ChatService {
    * covers complaints, safety/medical/legal language, and in-house guest
    * issues — the classifier prompt folds all of those into that one journey
    * state. `explicitHandoffRequest` is the one signal independent of journey
-   * state (a guest can ask for a human while just browsing). Group/event size
-   * thresholds are a real ABS §7 trigger too, but "configurable size
-   * threshold" implies a per-hotel setting that doesn't exist anywhere in the
-   * schema yet — a genuine gap, not implemented here rather than guessing a
-   * hardcoded number.
-   */
+   * state (a guest can ask for a human while just browsing). The group/event
+   * size threshold is a real ABS §7 trigger too (findings-log.md #9) but
+   * deliberately NOT included here — see `EscalationReason`'s doc comment for
+   * why it's evaluated after generation instead. */
   private detectPreAnswerEscalation(
     classification: ClassifierOutput,
   ): PreAnswerEscalationReason | null {
@@ -493,6 +532,23 @@ export class ChatService {
         .then((b) => b?.bookingEngineUrl ?? null),
     );
     return bookingEngineUrl ?? '';
+  }
+
+  /** ABS §7's group/event-size threshold (findings-log.md #9) —
+   * `BrandSettings.groupInquiryThreshold` is the per-hotel configurable
+   * number; a stated guest count strictly above it routes to sales. */
+  private async exceedsGroupSizeThreshold(
+    hotelId: string,
+    groupSize: number,
+  ): Promise<boolean> {
+    const threshold = await this.prisma.withTenant(hotelId, (tx) =>
+      tx.brandSettings
+        .findUnique({ where: { hotelId } })
+        .then(
+          (b) => b?.groupInquiryThreshold ?? DEFAULT_GROUP_INQUIRY_THRESHOLD,
+        ),
+    );
+    return groupSize > threshold;
   }
 
   private async openTurn(

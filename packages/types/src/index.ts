@@ -251,6 +251,14 @@ export interface ClassifierOutput {
     explicitHandoffRequest: boolean;
     /** Playbook §6's Trip Lifecycle Stage — independent of `journeyState`. */
     lifecycleStage: LifecycleStage;
+    /** ABS §7's "group/event size threshold" escalation trigger — a stated
+     * guest/attendee count for a potential group, wedding, or event booking
+     * (e.g. "120 guests"). Null unless the guest is describing party size in
+     * that specific context — never populated for an ordinary party-size
+     * mention (a dinner table, a family room) unrelated to a group/event
+     * inquiry. The threshold itself is per-hotel (`BrandSettings.
+     * groupInquiryThreshold`), not something the classifier decides. */
+    groupSize: number | null;
   };
 }
 

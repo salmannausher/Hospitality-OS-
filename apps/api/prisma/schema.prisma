@@ -165,6 +165,12 @@ model BrandSettings {
   /// POST"), so this is a plain external URL, admin-configured, not derived
   /// from anything else in the schema.
   bookingEngineUrl String?
+  /// ABS §7's "group/event size threshold" escalation trigger — a wedding/
+  /// group inquiry naming a guest count above this routes to sales
+  /// (findings-log.md #9). Default of 15 is a reasonable starting point for
+  /// a boutique/luxury property, not a data-driven number — admin-
+  /// configurable per hotel, same reasoning as `bookingEngineUrl`.
+  groupInquiryThreshold Int @default(15)
 
   updatedAt DateTime @updatedAt
 }

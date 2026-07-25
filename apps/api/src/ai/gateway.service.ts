@@ -114,6 +114,7 @@ const classifierSchema = z.object({
       'preparing',
       'staying',
     ]),
+    groupSize: z.number().nullable(),
   }),
 });
 
@@ -211,6 +212,7 @@ export class GatewayService {
         // A degraded classifier gives no lifecycle signal either — "researching"
         // is the same neutral default the prompt itself uses when genuinely ambiguous.
         lifecycleStage: 'researching',
+        groupSize: null,
       },
     };
   }
