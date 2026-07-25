@@ -36,14 +36,14 @@ Grading is a human (agent) read of each real transcript against the scenario's o
 | G-18a | Not a lead | **PASS** | No `lead_prompt`; answered the Wi-Fi question honestly without inventing the actual password. |
 | G-18b | Is a lead | **PASS§** | `lead_prompt` and the correct `card` bundle both fired; `journeyState: booking_intent` reported correctly. §The generated text extrapolated a 5-night total ($2,400 = 5 × the real $480/night rate) without caveating it as an estimate excluding taxes/fees — the base number is grounded, but presenting the multiplication as a confirmed total edges toward ABS §19's "never invent a rate" spirit. Minor, not a hard failure. |
 
-**Tally:** 14 clean passes, 5 passes with a caveat worth recording (G-02, G-06, G-14, G-17, G-18b), 1 content-only gap presented as a pass (G-15/G-16 — code correct, bundle content missing), and **4 real findings** (G-05, G-09, G-10, G-12) detailed below — G-05's is now fixed (2026-07-26).
+**Tally:** 14 clean passes, 5 passes with a caveat worth recording (G-02, G-06, G-14, G-17, G-18b), 1 content-only gap presented as a pass (G-15/G-16 — code correct, bundle content missing), and **4 real findings** (G-05, G-09, G-10, G-12) detailed below — G-05's and G-09/G-10's are now fixed (both 2026-07-26).
 
 ## Findings
 
 Full problem/root-cause/fix write-ups now live in the [Findings & Blockers Log](findings-log.md) (single source of truth, not duplicated here):
 
 1. **Card/text divergence (G-05)** — the `card` event and the generated text could name different entities in the same turn. **Fixed 2026-07-26** — see [Findings Log #8](findings-log.md).
-2. **Escalation fires for the wrong documented reason (G-09, G-10)** — wedding/events inquiries escalate via `low_confidence` (empty `events`-domain retrieval), not the real, still-unbuilt group/event-size threshold. **Open** — see [Findings Log #9](findings-log.md).
+2. **Escalation fires for the wrong documented reason (G-09, G-10)** — wedding/events inquiries used to escalate via `low_confidence` (empty `events`-domain retrieval), not the real group/event-size threshold. **Fixed 2026-07-26** — see [Findings Log #9](findings-log.md).
 3. **`base.md` never received ABS §10/§19's refusal-table content (G-12)** — a real, previously-unreconciled gap between two spec sections, exposed when a competitor-comparison scenario never even reached generation. **Open** — see [Findings Log #10](findings-log.md).
 
 ## What this run does NOT cover
@@ -53,4 +53,4 @@ Full problem/root-cause/fix write-ups now live in the [Findings & Blockers Log](
 
 ## Backlog implications
 
-None of the four findings block calling Sprint 3 complete — the ticket's own Definition of Done is running the Golden Set and logging pass/fail, which this document is. Finding 1 is fixed (2026-07-26). Findings 2 and 3 remain open and are worth a deliberate decision (not a silent fix) before Sprint 5/6.
+None of the four findings block calling Sprint 3 complete — the ticket's own Definition of Done is running the Golden Set and logging pass/fail, which this document is. Findings 1 and 2 are fixed (2026-07-26). Finding 3 remains open and is worth a deliberate decision (not a silent fix) before Sprint 5/6.

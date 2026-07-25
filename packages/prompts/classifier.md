@@ -38,7 +38,7 @@ Determine:
    query, resolving pronouns and context from history (e.g. "what about for kids"
    after a spa question becomes "spa treatments suitable for children")
 
-5. detectedSignals — { occasion, leadCaptureWorthy, explicitHandoffRequest, lifecycleStage }
+5. detectedSignals — { occasion, leadCaptureWorthy, explicitHandoffRequest, lifecycleStage, groupSize }
    - leadCaptureWorthy is true only if the guest named specific dates, asked for a
      quote or itinerary, described an occasion, or is actively comparing options —
      never true from a single unadorned question.
@@ -67,5 +67,12 @@ Determine:
        - dreaming: vague, early-stage inspirational browsing with no concrete trip
          signal at all (rare — most messages are at least "researching").
      When genuinely ambiguous, use researching, not a guess at a more specific stage.
+   - groupSize — an integer if the guest states a specific guest/attendee count for a
+     potential group, wedding, or event booking (e.g. "120 guests", "a corporate
+     retreat for 40 people"), else null. Only for a group/event/wedding booking
+     context — never populate this for an ordinary party-size mention unrelated to
+     that (e.g. "a table for 2", "two adults and two kids" for a family room). This
+     is specifically the ABS §7 group/event escalation signal, not general trip
+     context (leave `occasion`/`lifecycleStage` to carry that).
 
 Output only the JSON object matching the schema. Never explain your reasoning.
