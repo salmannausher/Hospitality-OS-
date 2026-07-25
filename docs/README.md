@@ -24,6 +24,16 @@ Ten documents, read in order the first time; used as reference after that. Each 
 | 16 | [Demo Property: Bellevue Hotel](16-demo-property-content.md) | Real content for the demo site and knowledge-base ingestion testing — rooms, dining, spa, policies, relationship bundles, photography sourcing. |
 | 17 | [Landing Page Plan](17-landing-page-plan.md) | Devsphinx's own product page — different audience than the Bellevue demo, not shown to Adam. |
 
+## Living documents (updated continuously, not read once)
+
+Unlike the numbered docs above, these change every sprint and should be checked fresh, not remembered from a prior read:
+
+| Document | Answers |
+|---|---|
+| [Sprint Backlog](14-sprint-backlog.md) | What's actually been built and verified vs. deliberately deferred, ticket by ticket. |
+| [Findings & Blockers Log](findings-log.md) | Every blocker (billing, account) and behavior/spec finding, ever — the problem, why it happened, the fix chosen and why, how it was verified. Log a new one here the moment it's found, not after. |
+| [Sprint 3 Golden Set Run](sprint-3-golden-set-run.md) | The Playbook's Golden Set, run by hand against the real pipeline — scenario-by-scenario pass/fail; findings surfaced here get their full write-up in the Findings Log instead of duplicated here. |
+
 ## Quick lookups
 
 - **"How does RAG/retrieval actually work?"** → [IA §5–7](03-information-architecture.md) (ingestion, chunking, retrieval pipeline) + [Architecture §4](06-system-architecture.md) (where it sits in the per-message flow) + [AI Engine §1–5](10-ai-engine-specification.md) (the actual calls, reranking, confidence formula).
@@ -35,6 +45,7 @@ Ten documents, read in order the first time; used as reference after that. Each 
 - **"What does the guest actually see?"** → [UX Flows](05-user-experience-flows.md) + whichever [design system option](08-ui-design-system.md) is chosen.
 - **"What can't the AI do / say?"** → [ABS §10, §19](02-ai-behavior-specification.md) (refusals, forbidden behaviors).
 - **"Is a proposed feature already in scope?"** → Check PRD §18–19 (future modules / MVP scope) before assuming it's new.
+- **"What's currently blocked or broken, and why did we fix it that way?"** → [Findings & Blockers Log](findings-log.md) — check this before assuming something is broken, half-built, or undecided.
 
 ## Status
 
