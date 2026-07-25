@@ -36,17 +36,17 @@ Grading is a human (agent) read of each real transcript against the scenario's o
 | G-18a | Not a lead | **PASS** | No `lead_prompt`; answered the Wi-Fi question honestly without inventing the actual password. |
 | G-18b | Is a lead | **PASS§** | `lead_prompt` and the correct `card` bundle both fired; `journeyState: booking_intent` reported correctly. §The generated text extrapolated a 5-night total ($2,400 = 5 × the real $480/night rate) without caveating it as an estimate excluding taxes/fees — the base number is grounded, but presenting the multiplication as a confirmed total edges toward ABS §19's "never invent a rate" spirit. Minor, not a hard failure. |
 
-**Tally:** 14 clean passes, 5 passes with a caveat worth recording (G-02, G-06, G-14, G-17, G-18b), 1 content-only gap presented as a pass (G-15/G-16 — code correct, bundle content missing), and **4 real findings** (G-05, G-09, G-10, G-12) detailed below.
+**Tally:** 14 clean passes, 5 passes with a caveat worth recording (G-02, G-06, G-14, G-17, G-18b), 1 content-only gap presented as a pass (G-15/G-16 — code correct, bundle content missing), and **4 real findings** (G-05, G-09, G-10, G-12) detailed below — G-05's is now fixed (2026-07-26).
 
 ## Findings
 
-### 1. Card/text divergence (G-05) — the two recommendation surfaces don't cross-reference each other
+### 1. Card/text divergence (G-05) — the two recommendation surfaces don't cross-reference each other — **FIXED 2026-07-26**
 
 The `card` event correctly returned the exact seeded `anniversary` bundle (Ocean View Suite + **The Rooftop at Bellevue** + Couples Massage) — proving `CardAssemblyService` (ticket 2) works exactly as designed. But the **generated answer text** recommended a different restaurant, **The Terrace**, for dinner. The guest would see a card naming one restaurant and read a paragraph naming another in the same turn.
 
-Root cause: card assembly (`EntityRelationship` lookup) and answer generation (vector retrieval → RAG context) are two independent systems with no cross-referencing between them. Retrieval doesn't know what the card mechanism picked, and vice versa. This is a sharper version of the exact failure mode [IA §12](03-information-architecture.md) warns the relationship layer exists to prevent ("not three independent lookups concatenated") — except here it's the card that's correct and the *prose* that drifted, which is arguably harder to notice than three disjointed pitches would have been.
+Root cause: card assembly (`EntityRelationship` lookup) and answer generation (vector retrieval → RAG context) were two independent systems with no cross-referencing between them. Retrieval didn't know what the card mechanism picked, and vice versa. This is a sharper version of the exact failure mode [IA §12](03-information-architecture.md) warns the relationship layer exists to prevent ("not three independent lookups concatenated") — except here it was the card that was correct and the *prose* that drifted, which is arguably harder to notice than three disjointed pitches would have been.
 
-**Not fixed in this pass** — this is a real architecture question (should retrieval be biased toward a fired bundle's entities? should the system prompt be told which entities are in the card so the text stays consistent with it?), not a small patch, and deserves its own scoped decision rather than a guess folded into a QA run.
+**Fix:** `ChatService` (`apps/api/src/ai/chat.service.ts`) now resolves the relationship bundle *before* generation (not after) and, when one fires, injects a "you must recommend precisely these entities" instruction into the system prompt (folded into the existing `{{rag_context}}` slot, not a new `base.md` placeholder — `base.md`/ABS §14 is a shared prompt-template contract, out of scope for a targeted fix). The already-resolved bundle is reused for the `card` event itself, rather than queried a second time. Live-verified reproducing the exact G-05 scenario (`apps/api/verify-card-text-consistency.mjs`) — the text now names "The Rooftop at Bellevue," matching the card. All five existing chat-pipeline verify scripts (cards, lead capture, escalation, cta, prompt modules) re-run clean, zero regressions.
 
 ### 2. Escalation fires for the wrong documented reason (G-09, G-10)
 
@@ -65,4 +65,4 @@ G-12 makes the gap concrete: the competitor-comparison question happened to scor
 
 ## Backlog implications
 
-None of the four findings block calling Sprint 3 complete — the ticket's own Definition of Done is running the Golden Set and logging pass/fail, which this document is. Findings 2 and 3 are new, real, and worth a deliberate decision (not a silent fix) before Sprint 5/6; finding 1 is worth flagging to whoever scopes real recommendation-quality work next.
+None of the four findings block calling Sprint 3 complete — the ticket's own Definition of Done is running the Golden Set and logging pass/fail, which this document is. Finding 1 is fixed (2026-07-26). Findings 2 and 3 remain open and are worth a deliberate decision (not a silent fix) before Sprint 5/6.

@@ -8,6 +8,7 @@ import type {
   ConfidenceBand,
   CtaKind,
   JourneyState,
+  RecommendationCard,
 } from '@hospitality/types';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { EscalationsService } from '../escalations/escalations.service';
@@ -220,6 +221,22 @@ export class ChatService {
       preAnswerReason;
     let band: ConfidenceBand;
     let answer = '';
+    // `contextTag` prefers the guest's own quick-start tap (UX §2) over the
+    // classifier's free-text occasion signal, since a tapped chip is the more
+    // explicit of the two. Computed once, up front, since both the bundle
+    // lookup below and the `card` event later need the same value.
+    const contextTag =
+      params.contextTag || classification.detectedSignals.occasion;
+    // The relationship bundle (IA §12), resolved BEFORE generation (not after,
+    // as Sprint 3 originally shipped it) so the model can be told exactly
+    // which entities it must recommend — see the Golden Set run's card/text
+    // divergence finding (docs/sprint-3-golden-set-run.md): card assembly and
+    // RAG retrieval used to be two independent systems that could name
+    // different entities in the same turn. Stays `[]` whenever a card
+    // wouldn't fire anyway (pre-answer escalation, wrong journey state, no
+    // contextTag) — computed once here, reused for the `card` event further
+    // down rather than queried twice.
+    let bundleCards: RecommendationCard[] = [];
 
     if (preAnswerReason) {
       // ABS §7 point 1: acknowledge in one sentence, no troubleshooting, no
@@ -287,12 +304,22 @@ export class ChatService {
         yield { type: 'delta', text: answer };
         escalationReason = 'low_confidence';
       } else {
+        if (
+          contextTag &&
+          RECOMMENDATION_JOURNEY_STATES.includes(classification.journeyState)
+        ) {
+          bundleCards = await this.cardAssembly.buildCards(
+            params.hotelId,
+            contextTag,
+          );
+        }
         const systemPrompt = await this.buildSystemPrompt({
           hotelId: params.hotelId,
           topChunks,
           historyText,
           domain: classification.domain,
           persona: classification.persona,
+          bundleCards,
         });
         const result = this.gateway.streamGeneration({
           systemPrompt,
@@ -347,24 +374,12 @@ export class ChatService {
       };
     } else {
       // --- Recommendation bundle (API §2.1 `card` event, IA §12). Only after
-      // the answer is complete (never instead of it — ABS §18), only in a
-      // journey state where recommending is appropriate. `contextTag` prefers
-      // the guest's own quick-start tap (UX §2) over the classifier's
-      // free-text occasion signal, since a tapped chip is the more explicit
-      // of the two.
-      const contextTag =
-        params.contextTag || classification.detectedSignals.occasion;
-      if (
-        contextTag &&
-        RECOMMENDATION_JOURNEY_STATES.includes(classification.journeyState)
-      ) {
-        const cards = await this.cardAssembly.buildCards(
-          params.hotelId,
-          contextTag,
-        );
-        if (cards.length > 0) {
-          yield { type: 'card', cards };
-        }
+      // the answer is complete (never instead of it — ABS §18). `bundleCards`
+      // was already resolved above, before generation, so this is the exact
+      // same bundle the system prompt was told to recommend — not a second,
+      // independent lookup that could drift from what the text says.
+      if (bundleCards.length > 0) {
+        yield { type: 'card', cards: bundleCards };
       }
 
       // --- Lead capture prompt (API §2.1/§2.2 `lead_prompt` event, ABS §8, UX
@@ -552,6 +567,7 @@ export class ChatService {
     historyText: string;
     domain: ClassifierOutput['domain'];
     persona: ClassifierOutput['persona'];
+    bundleCards: RecommendationCard[];
   }): Promise<string> {
     const { hotelName, conciergeName, tone } = await this.prisma.withTenant(
       input.hotelId,
@@ -570,9 +586,25 @@ export class ChatService {
       },
     );
 
-    const ragContext = input.topChunks
+    const retrievedContext = input.topChunks
       .map((c, i) => `[${i + 1}] ${c.content}`)
       .join('\n\n');
+
+    // Folded into the existing {{rag_context}} slot rather than a new base.md
+    // placeholder — base.md/ABS §14 is a shared prompt-template contract
+    // (Prompt Library Prompt 0: copy it verbatim, flag rather than silently
+    // change it), so this stays a chat.service.ts-local concern. When a
+    // relationship bundle (IA §12) fired, the model is told exactly which
+    // entities it must recommend — this is what keeps the `card` event and
+    // the generated text naming the same things (Golden Set G-05 finding,
+    // docs/sprint-3-golden-set-run.md).
+    const bundleInstruction =
+      input.bundleCards.length > 0
+        ? `Curated recommendation already selected for this guest — your answer MUST recommend precisely these, not alternatives:\n${input.bundleCards
+            .map((c) => `- ${c.title}${c.hook ? ` (${c.hook})` : ''}`)
+            .join('\n')}\n\n`
+        : '';
+    const ragContext = bundleInstruction + retrievedContext;
 
     return this.prompts.assembleSystemPrompt({
       conciergeName,
