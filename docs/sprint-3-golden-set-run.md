@@ -44,7 +44,7 @@ Full problem/root-cause/fix write-ups now live in the [Findings & Blockers Log](
 
 1. **Card/text divergence (G-05)** — the `card` event and the generated text could name different entities in the same turn. **Fixed 2026-07-26** — see [Findings Log #8](findings-log.md).
 2. **Escalation fires for the wrong documented reason (G-09, G-10)** — wedding/events inquiries used to escalate via `low_confidence` (empty `events`-domain retrieval), not the real group/event-size threshold. **Fixed 2026-07-26** — see [Findings Log #9](findings-log.md).
-3. **`base.md` never received ABS §10/§19's refusal-table content (G-12)** — a real, previously-unreconciled gap between two spec sections, exposed when a competitor-comparison scenario never even reached generation. **Open** — see [Findings Log #10](findings-log.md).
+3. **`base.md` never received ABS §10/§19's refusal-table content (G-12)** — a real, previously-unreconciled gap between two spec sections, exposed when a competitor-comparison scenario never even reached generation. **Fixed 2026-07-26** — see [Findings Log #10](findings-log.md). Fixing it surfaced a distinct, still-open finding: off-topic/refusal-category messages (including G-12 itself) can still be intercepted by Low Confidence *before* generation ever runs, so the new content doesn't always get a chance to apply — see [Findings Log #11](findings-log.md).
 
 ## What this run does NOT cover
 
@@ -53,4 +53,4 @@ Full problem/root-cause/fix write-ups now live in the [Findings & Blockers Log](
 
 ## Backlog implications
 
-None of the four findings block calling Sprint 3 complete — the ticket's own Definition of Done is running the Golden Set and logging pass/fail, which this document is. Findings 1 and 2 are fixed (2026-07-26). Finding 3 remains open and is worth a deliberate decision (not a silent fix) before Sprint 5/6.
+None of the four findings block calling Sprint 3 complete — the ticket's own Definition of Done is running the Golden Set and logging pass/fail, which this document is. All three code/content findings (1, 2, 3) are now fixed (2026-07-26). Fixing finding 3 surfaced one new, distinct, still-open finding ([Findings Log #11](findings-log.md): off-topic messages can bypass generation entirely via Low Confidence) — worth a deliberate decision before Sprint 5/6, not a silent fix.

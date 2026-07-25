@@ -18,10 +18,16 @@ export interface PromptRegistryEntry {
 export const promptRegistry: PromptRegistryEntry[] = [
   {
     id: "base",
-    version: "v1",
+    version: "v2",
     filePath: "base.md",
     active: true,
-    playbookCoverage: ["G-00", "G-11"],
+    // v2 adds ABS §10/§19's refusal-table content (competitor comparisons,
+    // prompt-extraction, policy-override, medical/legal/financial, harassment,
+    // booking-completion/guest-info-sharing) — a real gap between two spec
+    // sections found by the Sprint 3 Golden Set run and closed 2026-07-26
+    // (findings-log.md #10). G-12/G-13 and the Adversarial extended-scenario
+    // set (Playbook §5, items 56/57/59/60) are this content's direct tests.
+    playbookCoverage: ["G-00", "G-11", "G-12", "G-13", "56", "57", "59", "60"],
     triggerCondition: "always",
   },
   {
