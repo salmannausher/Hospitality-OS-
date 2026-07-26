@@ -9,6 +9,8 @@ import { AdminEntitiesController } from './entities/entities.controller';
 import { EntitiesService } from './entities/entities.service';
 import { AdminRelationshipsController } from './relationships/relationships.controller';
 import { RelationshipsService } from './relationships/relationships.service';
+import { AdminAnalyticsController } from './analytics/analytics.controller';
+import { AnalyticsService } from './analytics/analytics.service';
 
 /** Admin API surface (API §3) — session/hotels/knowledge/etc. modules land here as they're built. */
 @Module({
@@ -18,7 +20,13 @@ import { RelationshipsService } from './relationships/relationships.service';
     AdminKnowledgeController,
     AdminEntitiesController,
     AdminRelationshipsController,
+    AdminAnalyticsController,
   ],
-  providers: [HotelScopeGuard, EntitiesService, RelationshipsService],
+  providers: [
+    HotelScopeGuard,
+    EntitiesService,
+    RelationshipsService,
+    AnalyticsService,
+  ],
 })
 export class AdminModule {}

@@ -479,3 +479,21 @@ export interface EntitySearchResult {
   entityType: EntityType;
   name: string;
 }
+
+// ---------------------------------------------------------------------------
+// API §3.6 — Analytics. `GET /v1/admin/analytics/daily` reads `DailyMetric`
+// rollups (DB §13) — never live aggregates. Powers the Dashboard's KPI tiles
+// (UX §8). `avgSatisfaction` stays `null` for every row today — no guest-
+// facing satisfaction-capture flow exists anywhere in the product yet
+// (findings-log.md #12).
+// ---------------------------------------------------------------------------
+
+export interface DailyMetricRow {
+  date: string;
+  messageCount: number;
+  conversationCount: number;
+  bookingIntentCount: number;
+  leadCount: number;
+  escalationCount: number;
+  avgSatisfaction: number | null;
+}

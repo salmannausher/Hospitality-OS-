@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import type { Prisma } from '@prisma/client';
+import { bumpDailyMetric } from '../analytics/daily-metrics';
 import { PrismaService } from '../common/prisma/prisma.service';
 
 export type EscalationChoice = 'connect_now' | 'contact_me';
@@ -43,6 +44,8 @@ export class EscalationsService {
       const escalation = await tx.escalation.create({
         data: { hotelId, conversationId, reason },
       });
+      // Dashboard `escalationCount` rollup (findings-log.md #12).
+      await bumpDailyMetric(tx, hotelId, { escalationCount: 1 });
       return escalation.id;
     });
   }
@@ -129,6 +132,9 @@ export class EscalationsService {
       await tx.lead.create({
         data: { hotelId, conversationId, ...data, consentGiven: true },
       });
+      // Dashboard `leadCount` rollup (findings-log.md #12) — same "new,
+      // consented lead" rule LeadsService.submitAnswer uses.
+      await bumpDailyMetric(tx, hotelId, { leadCount: 1 });
     }
   }
 
