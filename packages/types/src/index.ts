@@ -259,6 +259,18 @@ export interface ClassifierOutput {
      * inquiry. The threshold itself is per-hotel (`BrandSettings.
      * groupInquiryThreshold`), not something the classifier decides. */
     groupSize: number | null;
+    /** ABS §10's refusal categories that never benefit from retrieval —
+     * competitor comparisons, general off-topic requests, prompt-extraction
+     * attempts, medical/legal/financial advice-seeking, and harassment. When
+     * true, the pipeline runs generation unconditionally (bypassing the
+     * confidence gate — findings-log.md #11), trusting base.md's refusal
+     * instructions to handle it, rather than falling back to the generic
+     * "I don't have that information" text for what isn't actually a
+     * knowledge-base gap. Deliberately excludes policy-override/discount
+     * requests — ABS §10 says those should still check for a real current
+     * promotion in the knowledge base, so they stay on the normal
+     * confidence-gated path. */
+    offTopicOrRefusal: boolean;
   };
 }
 

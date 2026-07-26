@@ -115,6 +115,7 @@ const classifierSchema = z.object({
       'staying',
     ]),
     groupSize: z.number().nullable(),
+    offTopicOrRefusal: z.boolean(),
   }),
 });
 
@@ -213,6 +214,9 @@ export class GatewayService {
         // is the same neutral default the prompt itself uses when genuinely ambiguous.
         lifecycleStage: 'researching',
         groupSize: null,
+        // A degraded classifier shouldn't assume refusal-bypass — false means
+        // the normal confidence-gated path runs, the safer failure mode.
+        offTopicOrRefusal: false,
       },
     };
   }

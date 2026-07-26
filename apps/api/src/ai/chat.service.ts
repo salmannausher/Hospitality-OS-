@@ -324,7 +324,17 @@ export class ChatService {
 
       // --- Answer (step 7). Low confidence → honest fallback, NO generation
       // call, and — per ABS §5 — this band uses the escalation pattern too.
-      if (band === 'LOW' || topChunks.length === 0) {
+      // Exception: an ABS §10 refusal-category message (competitor comparison,
+      // off-topic, prompt-extraction, medical/legal/financial advice,
+      // harassment) never needed retrieval to begin with — no amount of
+      // knowledge-base content changes the correct response, so low/empty
+      // retrieval here isn't a real information gap (findings-log.md #11).
+      // Generation always runs for these, and — deliberately — this isn't an
+      // escalation-worthy "we don't know" moment either.
+      if (
+        (band === 'LOW' || topChunks.length === 0) &&
+        !classification.detectedSignals.offTopicOrRefusal
+      ) {
         answer = LOW_CONFIDENCE_FALLBACK;
         yield { type: 'delta', text: answer };
         // `group_size_threshold` is the more specific, structured reason —
