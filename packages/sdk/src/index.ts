@@ -9,16 +9,23 @@ import type {
   AdminSessionResponse,
   BootstrapResponse,
   ChatSSEEvent,
+  ConversationDetail,
+  ConversationSummary,
   CreateKnowledgeDocumentResponse,
   DocumentStatus,
   EntityByParam,
   EntityParam,
   EntitySearchResult,
   EntityType,
+  FlagForPlaybookRequest,
+  FlagForPlaybookResponse,
+  JourneyState,
   KnowledgeChunkPreview,
   KnowledgeDocumentStageStatus,
   KnowledgeDocumentSummary,
   Paginated,
+  QAScoreDetail,
+  QAScoreInput,
   SubmitEscalationChoiceRequest,
   SubmitEscalationChoiceResponse,
   SubmitLeadAnswerRequest,
@@ -29,14 +36,20 @@ import type {
 export type {
   AdminSessionResponse,
   BootstrapResponse,
+  ConversationDetail,
+  ConversationSummary,
   CreateKnowledgeDocumentResponse,
   EntityByParam,
   EntityParam,
   EntitySearchResult,
+  FlagForPlaybookRequest,
+  FlagForPlaybookResponse,
   KnowledgeChunkPreview,
   KnowledgeDocumentStageStatus,
   KnowledgeDocumentSummary,
   Paginated,
+  QAScoreDetail,
+  QAScoreInput,
   SubmitEscalationChoiceRequest,
   SubmitEscalationChoiceResponse,
   SubmitLeadAnswerRequest,
@@ -295,6 +308,133 @@ export async function searchEntities(
     throw new Error(`entity search failed: ${res.status}`);
   }
   return (await res.json()) as EntitySearchResult[];
+}
+
+/** Triage list (UX §11) — `GET /v1/admin/conversations` (API §3.4). */
+export async function listConversations(
+  accessToken: string,
+  opts: {
+    escalated?: boolean;
+    hasLead?: boolean;
+    journeyState?: JourneyState;
+    from?: string;
+    to?: string;
+    cursor?: string;
+    limit?: number;
+    hotelId?: string;
+  } = {},
+): Promise<Paginated<ConversationSummary>> {
+  const params = new URLSearchParams();
+  if (opts.escalated !== undefined) params.set("escalated", String(opts.escalated));
+  if (opts.hasLead !== undefined) params.set("hasLead", String(opts.hasLead));
+  if (opts.journeyState) params.set("journeyState", opts.journeyState);
+  if (opts.from) params.set("from", opts.from);
+  if (opts.to) params.set("to", opts.to);
+  if (opts.cursor) params.set("cursor", opts.cursor);
+  if (opts.limit) params.set("limit", String(opts.limit));
+  if (opts.hotelId) params.set("hotelId", opts.hotelId);
+  const qs = params.toString();
+  const res = await fetch(
+    `${baseUrl()}/v1/admin/conversations${qs ? `?${qs}` : ""}`,
+    { headers: { Authorization: `Bearer ${accessToken}` } },
+  );
+  if (!res.ok) {
+    throw new Error(`conversation list failed: ${res.status}`);
+  }
+  return (await res.json()) as Paginated<ConversationSummary>;
+}
+
+/** Full thread — `GET /v1/admin/conversations/:id` (API §3.4). */
+export async function getConversation(
+  accessToken: string,
+  id: string,
+  opts: { hotelId?: string } = {},
+): Promise<ConversationDetail> {
+  const qs = opts.hotelId ? `?hotelId=${encodeURIComponent(opts.hotelId)}` : "";
+  const res = await fetch(
+    `${baseUrl()}/v1/admin/conversations/${id}${qs}`,
+    { headers: { Authorization: `Bearer ${accessToken}` } },
+  );
+  if (!res.ok) {
+    throw new Error(`conversation fetch failed: ${res.status}`);
+  }
+  return (await res.json()) as ConversationDetail;
+}
+
+/** ABS §15 rubric — `POST /v1/admin/conversations/:id/qa-score` (API §3.4).
+ * 409 on an existing score — use `reviseQaScore` to revise. */
+export async function submitQaScore(
+  accessToken: string,
+  conversationId: string,
+  input: QAScoreInput,
+  opts: { hotelId?: string } = {},
+): Promise<QAScoreDetail> {
+  const qs = opts.hotelId ? `?hotelId=${encodeURIComponent(opts.hotelId)}` : "";
+  const res = await fetch(
+    `${baseUrl()}/v1/admin/conversations/${conversationId}/qa-score${qs}`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(input),
+    },
+  );
+  if (!res.ok) {
+    throw new Error(`qa-score submission failed: ${res.status}`);
+  }
+  return (await res.json()) as QAScoreDetail;
+}
+
+/** Revises an existing QA score — `PATCH /v1/admin/conversations/:id/qa-score`. */
+export async function reviseQaScore(
+  accessToken: string,
+  conversationId: string,
+  input: QAScoreInput,
+  opts: { hotelId?: string } = {},
+): Promise<QAScoreDetail> {
+  const qs = opts.hotelId ? `?hotelId=${encodeURIComponent(opts.hotelId)}` : "";
+  const res = await fetch(
+    `${baseUrl()}/v1/admin/conversations/${conversationId}/qa-score${qs}`,
+    {
+      method: "PATCH",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(input),
+    },
+  );
+  if (!res.ok) {
+    throw new Error(`qa-score revision failed: ${res.status}`);
+  }
+  return (await res.json()) as QAScoreDetail;
+}
+
+/** Closes the Playbook §7 loop — `POST /v1/admin/conversations/:id/flag-for-playbook`. */
+export async function flagForPlaybook(
+  accessToken: string,
+  conversationId: string,
+  body: FlagForPlaybookRequest = {},
+  opts: { hotelId?: string } = {},
+): Promise<FlagForPlaybookResponse> {
+  const qs = opts.hotelId ? `?hotelId=${encodeURIComponent(opts.hotelId)}` : "";
+  const res = await fetch(
+    `${baseUrl()}/v1/admin/conversations/${conversationId}/flag-for-playbook${qs}`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+    },
+  );
+  if (!res.ok) {
+    throw new Error(`flag-for-playbook failed: ${res.status}`);
+  }
+  return (await res.json()) as FlagForPlaybookResponse;
 }
 
 // API §2.4 — GET /v1/chat/bootstrap
