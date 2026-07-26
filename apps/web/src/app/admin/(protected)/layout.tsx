@@ -9,12 +9,12 @@ import { useEffect, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { useAdminAuth } from "@/lib/admin-auth-context";
 
-// UX §8 screen map. Dashboard is the only screen that exists yet.
+// UX §8 screen map. Screens land here as they're built (docs/14-sprint-backlog.md).
 const NAV_ITEMS = [
   { label: "Dashboard", href: "/admin" },
   { label: "Hotels", href: null, agencyOnly: true },
   { label: "Knowledge Base", href: "/admin/knowledge" },
-  { label: "Conversations", href: null },
+  { label: "Conversations", href: "/admin/conversations" },
   { label: "Leads", href: null },
   { label: "Analytics", href: null },
   { label: "Brand Settings", href: null },

@@ -126,6 +126,14 @@
 **Fix chosen — and why:** Clamped the computed percentage to a minimum of 0 in `apps/web/src/app/admin/(protected)/page.tsx`'s `buildTiles()` — a one-line display-layer fix, not a change to what's stored (the raw counts are correct and meaningful on their own; only the *derived* percentage needed guarding against a nonsensical negative). Rejected: changing what `escalationCount`/`conversationCount` mean, which would be a bigger, unrelated change to a metric other future Analytics work (API §3.6) also depends on.
 **Verification:** Confirmed live in-browser — reloaded the Dashboard against the same real (7 escalations / 4 conversations) data and it now shows `0%` instead of `-75%`.
 
+### 14. `Message.escalationTriggered`/`leadCaptureTriggered` never get set — FIXED (2026-07-27)
+
+**Found:** Sprint 4, starting ticket 2 (conversation list + thread view + QA scoring, API §3.4).
+**Problem:** API §3.4's `GET /v1/admin/conversations/:id` is specified to return "messages with their per-turn journeyState, confidenceBand, **flags**" — `Message.escalationTriggered`/`Message.leadCaptureTriggered` are exactly those flags (DB §10). `ChatService.persistConciergeTurn` writes `journeyState`, `domainTags`, and `confidenceBand` onto every concierge message, but never touches either boolean — they're stuck at their schema default (`false`) on every message ever written, even ones where an escalation or lead prompt genuinely fired that turn.
+**Root cause:** Both booleans were added to the schema for exactly this thread-view use case, but nothing in Sprint 1 or 3's chat-pipeline work was ever told to populate them — `streamTurn` already computes both facts (`escalationReason`, and whether a `lead_prompt` event fires) for its own SSE-event logic, it just never threads them through to the persisted row.
+**Fix chosen — and why:** Thread both facts through to `persistConciergeTurn` as two more fields, computed from state `streamTurn` already has (`escalationReason !== null`; a new `leadPromptFired` local set at the exact point the `lead_prompt` event is yielded) — no new detection logic, just wiring existing signals to the row they were always meant to land on.
+**Verification:** `apps/api/verify-conversations.mjs` (30/30 checks) — a real service_recovery turn shows `escalationTriggered: true`/`leadCaptureTriggered: false` on its concierge message; a real booking_intent+leadCaptureWorthy turn shows the inverse. All 3 other chat-pipeline verify scripts re-run clean afterward.
+
 ---
 
-**Next entry number: 14.**
+**Next entry number: 15.**

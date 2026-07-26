@@ -497,3 +497,80 @@ export interface DailyMetricRow {
   escalationCount: number;
   avgSatisfaction: number | null;
 }
+
+// ---------------------------------------------------------------------------
+// API §3.4 — Conversations & QA. `GET /v1/admin/conversations` (triage list,
+// UX §11), `GET .../:id` (full thread), `POST`/`PATCH .../qa-score` (the ABS
+// §15 rubric — grounding/tone/escalation/leadCapture/resolution, 1–5 each),
+// `POST .../flag-for-playbook` (closes the Playbook §7 loop).
+// ---------------------------------------------------------------------------
+
+export type ConversationStatus = "ACTIVE" | "ESCALATED" | "CLOSED";
+
+export interface ConversationSummary {
+  id: string;
+  status: ConversationStatus;
+  startedAt: string;
+  endedAt: string | null;
+  journeyState: JourneyState | null;
+  domainTags: string[];
+  escalated: boolean;
+  hasLead: boolean;
+  leadScore: number | null;
+  messageCount: number;
+}
+
+export interface MessageDetail {
+  id: string;
+  role: "GUEST" | "CONCIERGE";
+  content: string;
+  journeyState: JourneyState | null;
+  confidenceBand: ConfidenceBand | null;
+  escalationTriggered: boolean;
+  leadCaptureTriggered: boolean;
+  domainTags: string[];
+  createdAt: string;
+}
+
+export interface QAScoreDetail {
+  id: string;
+  grounding: number;
+  tone: number;
+  escalation: number;
+  leadCapture: number;
+  resolution: number;
+  scoredBy: string;
+  scoredAt: string;
+}
+
+export interface ConversationDetail extends ConversationSummary {
+  messages: MessageDetail[];
+  qaScore: QAScoreDetail | null;
+}
+
+/** Body for `POST`/`PATCH /v1/admin/conversations/:id/qa-score` — each
+ * dimension 1–5 per ABS §15's rubric. */
+export interface QAScoreInput {
+  grounding: number;
+  tone: number;
+  escalation: number;
+  leadCapture: number;
+  resolution: number;
+}
+
+/** Body for `POST /v1/admin/conversations/:id/flag-for-playbook`. `messageId`
+ * picks which GUEST message becomes the scenario's `guestMessage` — defaults
+ * to the conversation's first guest message when omitted. The rest mirrors
+ * `PlaybookScenario`'s own qualitative fields, which nothing can infer
+ * automatically from a transcript. */
+export interface FlagForPlaybookRequest {
+  messageId?: string;
+  expectedBehavior?: string[];
+  mustNot?: string[];
+  escalationExpected?: boolean;
+  leadCaptureExpected?: boolean;
+}
+
+export interface FlagForPlaybookResponse {
+  scenarioId: string;
+}

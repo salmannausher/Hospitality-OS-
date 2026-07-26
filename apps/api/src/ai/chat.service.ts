@@ -263,6 +263,10 @@ export class ChatService {
     // contextTag) — computed once here, reused for the `card` event further
     // down rather than queried twice.
     let bundleCards: RecommendationCard[] = [];
+    // `Message.leadCaptureTriggered` (DB §10, findings-log.md #14) — true only
+    // when the `lead_prompt` SSE event actually fires this turn, set at the
+    // exact point below where that event is yielded.
+    let leadPromptFired = false;
 
     if (preAnswerReason) {
       // ABS §7 point 1: acknowledge in one sentence, no troubleshooting, no
@@ -452,6 +456,7 @@ export class ChatService {
             tx.lead.findFirst({ where: { conversationId, deletedAt: null } }),
         );
         if (!alreadyAsked) {
+          leadPromptFired = true;
           yield {
             type: 'lead_prompt',
             promptId: `lp_${randomUUID().replace(/-/g, '')}`,
@@ -486,6 +491,8 @@ export class ChatService {
         journeyState: classification.journeyState,
         domainTags: classification.domain,
         band,
+        escalationTriggered: escalationReason !== null,
+        leadCaptureTriggered: leadPromptFired,
       }),
     );
 
@@ -625,6 +632,8 @@ export class ChatService {
       journeyState: JourneyState;
       domainTags: string[];
       band: ConfidenceBand;
+      escalationTriggered: boolean;
+      leadCaptureTriggered: boolean;
     },
   ): Promise<string> {
     const created = await tx.message.create({
@@ -636,6 +645,8 @@ export class ChatService {
         journeyState: input.journeyState,
         domainTags: input.domainTags,
         confidenceBand: input.band,
+        escalationTriggered: input.escalationTriggered,
+        leadCaptureTriggered: input.leadCaptureTriggered,
       },
     });
 
