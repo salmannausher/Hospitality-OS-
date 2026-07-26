@@ -12,6 +12,7 @@ import type {
   ConversationDetail,
   ConversationSummary,
   CreateKnowledgeDocumentResponse,
+  DailyMetricRow,
   DocumentStatus,
   EntityByParam,
   EntityParam,
@@ -39,6 +40,7 @@ export type {
   ConversationDetail,
   ConversationSummary,
   CreateKnowledgeDocumentResponse,
+  DailyMetricRow,
   EntityByParam,
   EntityParam,
   EntitySearchResult,
@@ -308,6 +310,28 @@ export async function searchEntities(
     throw new Error(`entity search failed: ${res.status}`);
   }
   return (await res.json()) as EntitySearchResult[];
+}
+
+/** Dashboard KPI tiles (UX §8) — `GET /v1/admin/analytics/daily?from=&to=`
+ * (API §3.6). `from`/`to` are optional; the endpoint defaults to a 30-day
+ * window ending today when omitted. */
+export async function getDailyAnalytics(
+  accessToken: string,
+  opts: { from?: string; to?: string; hotelId?: string } = {},
+): Promise<DailyMetricRow[]> {
+  const params = new URLSearchParams();
+  if (opts.from) params.set("from", opts.from);
+  if (opts.to) params.set("to", opts.to);
+  if (opts.hotelId) params.set("hotelId", opts.hotelId);
+  const qs = params.toString();
+  const res = await fetch(
+    `${baseUrl()}/v1/admin/analytics/daily${qs ? `?${qs}` : ""}`,
+    { headers: { Authorization: `Bearer ${accessToken}` } },
+  );
+  if (!res.ok) {
+    throw new Error(`daily analytics fetch failed: ${res.status}`);
+  }
+  return (await res.json()) as DailyMetricRow[];
 }
 
 /** Triage list (UX §11) — `GET /v1/admin/conversations` (API §3.4). */

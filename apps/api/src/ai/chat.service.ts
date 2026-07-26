@@ -10,6 +10,7 @@ import type {
   JourneyState,
   RecommendationCard,
 } from '@hospitality/types';
+import { bumpDailyMetric } from '../analytics/daily-metrics';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { EscalationsService } from '../escalations/escalations.service';
 import { CardAssemblyService } from './card-assembly.service';
@@ -262,7 +263,7 @@ export class ChatService {
     // contextTag) — computed once here, reused for the `card` event further
     // down rather than queried twice.
     let bundleCards: RecommendationCard[] = [];
-    // `Message.leadCaptureTriggered` (DB §10, findings-log.md #12) — true only
+    // `Message.leadCaptureTriggered` (DB §10, findings-log.md #14) — true only
     // when the `lead_prompt` SSE event actually fires this turn, set at the
     // exact point below where that event is yielded.
     let leadPromptFired = false;
@@ -606,6 +607,19 @@ export class ChatService {
       },
     });
 
+    // Dashboard `conversationCount` rollup (findings-log.md #12) — a brand
+    // new conversation has zero prior messages by definition, so `prior`
+    // (already being fetched for history above) doubles as the "is this
+    // new?" check with no extra query — deliberately not a separate
+    // `findUnique` before the upsert, which would add another round trip to
+    // an already-tight transaction under this environment's documented
+    // pooler-timeout pressure (CLAUDE.md's own P2028 note).
+
+    await bumpDailyMetric(tx, params.hotelId, {
+      messageCount: 1,
+      conversationCount: prior.length === 0 ? 1 : 0,
+    });
+
     return prior.reverse();
   }
 
@@ -635,6 +649,12 @@ export class ChatService {
         leadCaptureTriggered: input.leadCaptureTriggered,
       },
     });
+
+    await bumpDailyMetric(tx, input.hotelId, {
+      messageCount: 1,
+      bookingIntentCount: input.journeyState === 'booking_intent' ? 1 : 0,
+    });
+
     return created.id;
   }
 

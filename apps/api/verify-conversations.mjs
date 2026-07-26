@@ -1,6 +1,6 @@
 // Sprint 4, ticket 2 — verify the Conversation list + thread view + QA
 // scoring surface (API §3.4, UX §11, ABS §15) end to end: real chat turns
-// actually populate the flags the thread view needs (findings-log.md #12 —
+// actually populate the flags the thread view needs (findings-log.md #14 —
 // Message.escalationTriggered/leadCaptureTriggered were never set before
 // this ticket), the list's derived fields (topic tags, journeyState,
 // escalated, hasLead, leadScore) and filters, qa-score create/409/validate/
@@ -173,28 +173,28 @@ try {
     restore();
   }
 
-  // --- findings-log.md #12: escalationTriggered/leadCaptureTriggered actually land on Message rows.
+  // --- findings-log.md #14: escalationTriggered/leadCaptureTriggered actually land on Message rows.
   const detailA = await conversations.get(hotelId, conversationA);
   const concergeMsgA = detailA.messages.find((m) => m.role === 'CONCIERGE');
   check(
-    '[#12] escalationTriggered=true on the concierge message that escalated',
+    '[#14] escalationTriggered=true on the concierge message that escalated',
     concergeMsgA?.escalationTriggered === true,
     JSON.stringify(concergeMsgA),
   );
   check(
-    '[#12] leadCaptureTriggered=false on that same message (no lead signal this turn)',
+    '[#14] leadCaptureTriggered=false on that same message (no lead signal this turn)',
     concergeMsgA?.leadCaptureTriggered === false,
   );
 
   const detailB = await conversations.get(hotelId, conversationB);
   const concergeMsgB = detailB.messages.find((m) => m.role === 'CONCIERGE');
   check(
-    '[#12] leadCaptureTriggered=true on the concierge message that prompted for a lead',
+    '[#14] leadCaptureTriggered=true on the concierge message that prompted for a lead',
     concergeMsgB?.leadCaptureTriggered === true,
     JSON.stringify(concergeMsgB),
   );
   check(
-    '[#12] escalationTriggered=false on that same message',
+    '[#14] escalationTriggered=false on that same message',
     concergeMsgB?.escalationTriggered === false,
   );
 

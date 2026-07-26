@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
+import { bumpDailyMetric } from '../analytics/daily-metrics';
 import { PrismaService } from '../common/prisma/prisma.service';
 
 export type LeadField = 'email' | 'dates' | 'name' | 'phone';
@@ -97,6 +98,13 @@ export class LeadsService {
               ...(column ? { [column]: value } : {}),
             },
           });
+
+      // Dashboard `leadCount` rollup (findings-log.md #12) — only a genuinely
+      // new, consented lead counts (never a decline, never a repeat field
+      // submission against the same row that's already been counted once).
+      if (!existing && !declined && lead.consentGiven) {
+        await bumpDailyMetric(tx, hotelId, { leadCount: 1 });
+      }
 
       // ABS §8: a decline is recorded (so the conversation never asks again)
       // but captures nothing and offers no next field.

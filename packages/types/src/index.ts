@@ -481,6 +481,24 @@ export interface EntitySearchResult {
 }
 
 // ---------------------------------------------------------------------------
+// API §3.6 — Analytics. `GET /v1/admin/analytics/daily` reads `DailyMetric`
+// rollups (DB §13) — never live aggregates. Powers the Dashboard's KPI tiles
+// (UX §8). `avgSatisfaction` stays `null` for every row today — no guest-
+// facing satisfaction-capture flow exists anywhere in the product yet
+// (findings-log.md #12).
+// ---------------------------------------------------------------------------
+
+export interface DailyMetricRow {
+  date: string;
+  messageCount: number;
+  conversationCount: number;
+  bookingIntentCount: number;
+  leadCount: number;
+  escalationCount: number;
+  avgSatisfaction: number | null;
+}
+
+// ---------------------------------------------------------------------------
 // API §3.4 — Conversations & QA. `GET /v1/admin/conversations` (triage list,
 // UX §11), `GET .../:id` (full thread), `POST`/`PATCH .../qa-score` (the ABS
 // §15 rubric — grounding/tone/escalation/leadCapture/resolution, 1–5 each),

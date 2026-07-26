@@ -9,6 +9,8 @@ import { AdminEntitiesController } from './entities/entities.controller';
 import { EntitiesService } from './entities/entities.service';
 import { AdminRelationshipsController } from './relationships/relationships.controller';
 import { RelationshipsService } from './relationships/relationships.service';
+import { AdminAnalyticsController } from './analytics/analytics.controller';
+import { AnalyticsService } from './analytics/analytics.service';
 import { AdminConversationsController } from './conversations/conversations.controller';
 import { ConversationsService } from './conversations/conversations.service';
 
@@ -20,12 +22,14 @@ import { ConversationsService } from './conversations/conversations.service';
     AdminKnowledgeController,
     AdminEntitiesController,
     AdminRelationshipsController,
+    AdminAnalyticsController,
     AdminConversationsController,
   ],
   providers: [
     HotelScopeGuard,
     EntitiesService,
     RelationshipsService,
+    AnalyticsService,
     ConversationsService,
   ],
 })
