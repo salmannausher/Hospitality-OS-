@@ -134,6 +134,22 @@
 **Fix chosen — and why:** Thread both facts through to `persistConciergeTurn` as two more fields, computed from state `streamTurn` already has (`escalationReason !== null`; a new `leadPromptFired` local set at the exact point the `lead_prompt` event is yielded) — no new detection logic, just wiring existing signals to the row they were always meant to land on.
 **Verification:** `apps/api/verify-conversations.mjs` (30/30 checks) — a real service_recovery turn shows `escalationTriggered: true`/`leadCaptureTriggered: false` on its concierge message; a real booking_intent+leadCaptureWorthy turn shows the inverse. All 3 other chat-pipeline verify scripts re-run clean afterward.
 
+### 15. `Lead` has no `source` column, but API §3.4 assumes one — FIXED (2026-07-28)
+
+**Found:** Sprint 4, starting ticket 3 (Leads inbox, including manual entry, API §3.4).
+**Problem:** API §3.4's own words: `POST /v1/admin/leads` is "manual lead entry... same `Lead` model, `source: "manual"`" — implying a `source` field distinguishing manually-entered leads from chat-captured ones. `Lead` (DB §10/§11) has no such column at all.
+**Root cause:** The API spec was written assuming a field that was never added to the schema — the same kind of doc/schema gap findings 5, 6, 12, and 14 already surfaced elsewhere in this project.
+**Fix chosen — and why:** No migration needed — `Lead.conversationId` already distinguishes the two cases without a new column. Every lead created through the chat pipeline (`LeadsService.submitAnswer`, `EscalationsService.captureContact`) always sets `conversationId` (it's the whole point of both flows — capturing contact info *for a conversation*); a manually-entered lead has no conversation behind it at all. So `source` is computed at read time (`conversationId == null ? "manual" : "chat"`) in the admin API response, the same "derive it, don't store it redundantly" approach ticket 2 used for `ConversationSummary.domainTags`/`journeyState`. Rejected: adding a `Lead.source` enum column — a real schema change for a fact `conversationId`'s existing nullability already encodes.
+**Verification:** `apps/api/verify-leads-inbox.mjs` (21/21 checks) — a chat-captured lead reports `source: "chat"` with its real `conversationId`; a manually-created one reports `source: "manual"` with `conversationId: null`. Also covers `list` (status filter + cursor pagination), `get` (404 on unknown id), and `update` (status validation, `assignedOwnerId` validated against a real `HotelMembership` — rejects an id with no membership for the hotel — notes, and clearing either field with an explicit `null`). Live-verified in-browser too: manual entry form and the status/owner/notes edit form both round-tripped for real (`POST`/`PATCH` → `201`/`200` in the network log), status filter dropdown correctly narrowed the list. All 3 other chat-pipeline verify scripts re-run clean — zero regressions.
+
+### 16. Leads Inbox table header cells ran together with no spacing — FIXED (2026-07-28)
+
+**Found:** Live browser verification of the Leads Inbox page, ticket 3.
+**Problem:** A screenshot showed table headers rendering as "SourceStatus", "OwnerCreated" — no visible gap between adjacent columns' text.
+**Root cause:** Copied the Knowledge Base/Conversations pages' own table convention, which only puts `padding` on the *first* `<th>`/`<td>` in each row. That convention happened to look fine there because the first column's text ("Document", a guest's contact/topic tags) was wide enough to create visual separation on its own — Leads' narrower columns (Source, Status, Owner) exposed the gap the convention never actually closed.
+**Fix chosen — and why:** Gave every `<th>`/`<td>` in the Leads table its own right padding (`0.5rem 1rem 0.5rem 0`), rather than relying on incidental whitespace from neighboring cell content. Rejected: leaving it as "it happens to work" precedent — it doesn't generalize, as this page just demonstrated.
+**Verification:** Confirmed live in-browser — reloaded the page and every column now reads with clear separation.
+
 ---
 
-**Next entry number: 15.**
+**Next entry number: 17.**
