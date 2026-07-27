@@ -574,3 +574,58 @@ export interface FlagForPlaybookRequest {
 export interface FlagForPlaybookResponse {
   scenarioId: string;
 }
+
+// ---------------------------------------------------------------------------
+// API §3.4 — Leads inbox. `GET/PATCH /v1/admin/leads[/:id]` (filter by
+// `status`, update status/owner/notes), `POST /v1/admin/leads` (manual entry
+// — a phone or walk-in inquiry). `source` isn't a stored column (findings-log
+// .md #15) — derived from `conversationId` being null (a manually-entered
+// lead has no chat conversation behind it; every chat-captured lead always
+// has one).
+// ---------------------------------------------------------------------------
+
+export type LeadSource = "chat" | "manual";
+
+export interface LeadSummary {
+  id: string;
+  status: LeadStatus;
+  source: LeadSource;
+  conversationId: string | null;
+  name: string | null;
+  email: string | null;
+  phone: string | null;
+  travelDates: string | null;
+  budget: string | null;
+  guestCount: number | null;
+  reasonForStay: string | null;
+  preferredRoom: string | null;
+  consentGiven: boolean;
+  leadScore: number | null;
+  assignedOwnerId: string | null;
+  notes: string | null;
+  createdAt: string;
+}
+
+/** Body for `PATCH /v1/admin/leads/:id` — every field optional, only
+ * status/owner/notes are ever updated here (contact/trip details come from
+ * the guest via the chat flow or manual entry, not admin edits). */
+export interface UpdateLeadRequest {
+  status?: LeadStatus;
+  assignedOwnerId?: string | null;
+  notes?: string | null;
+}
+
+/** Body for `POST /v1/admin/leads` — manual entry (API §3.4). At least one of
+ * `name`/`email`/`phone` is required; there's no point logging a lead with no
+ * way to reach the guest. */
+export interface CreateManualLeadRequest {
+  name?: string;
+  email?: string;
+  phone?: string;
+  travelDates?: string;
+  budget?: string;
+  guestCount?: number;
+  reasonForStay?: string;
+  preferredRoom?: string;
+  notes?: string;
+}

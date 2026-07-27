@@ -1,7 +1,32 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
+import type { LeadStatus as PrismaLeadStatus } from '@prisma/client';
+import type {
+  CreateManualLeadRequest,
+  LeadSummary,
+  Paginated,
+  UpdateLeadRequest,
+} from '@hospitality/types';
 import { bumpDailyMetric } from '../analytics/daily-metrics';
 import { PrismaService } from '../common/prisma/prisma.service';
+
+const LEAD_STATUSES = [
+  'NEW',
+  'CONTACTED',
+  'QUALIFIED',
+  'CONVERTED',
+  'LOST',
+] as const;
+
+export interface ListLeadsOptions {
+  status?: string;
+  cursor?: string;
+  limit?: number;
+}
 
 export type LeadField = 'email' | 'dates' | 'name' | 'phone';
 
@@ -119,6 +144,203 @@ export class LeadsService {
         CHAT_FIELD_ORDER.find((f) => !captured.includes(f)) ?? null;
       return { leadId: lead.id, captured, nextField };
     });
+  }
+
+  /** `GET /v1/admin/leads` (API §3.4) — the inbox list, filterable by
+   * `status`, cursor-paginated same as every other admin list. Role-gating
+   * ("MARKETING can't reassign leads," API §1) is deliberately not enforced
+   * here — that's Sprint 4 ticket 8's job (`/session`, hotel CRUD, role
+   * gating verified per role), not this ticket's. */
+  async list(
+    hotelId: string,
+    opts: ListLeadsOptions,
+  ): Promise<Paginated<LeadSummary>> {
+    const limit = Math.min(opts.limit ?? 50, 100);
+    const status = opts.status ? this.requireStatus(opts.status) : undefined;
+    return this.prisma.withTenant(hotelId, async (tx) => {
+      const rows = await tx.lead.findMany({
+        where: { deletedAt: null, ...(status ? { status } : {}) },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        take: limit + 1,
+        ...(opts.cursor ? { cursor: { id: opts.cursor }, skip: 1 } : {}),
+      });
+      const hasMore = rows.length > limit;
+      const items = (hasMore ? rows.slice(0, limit) : rows).map((r) =>
+        this.toSummary(r),
+      );
+      return { items, nextCursor: hasMore ? rows[limit - 1].id : null };
+    });
+  }
+
+  /** `GET /v1/admin/leads/:id` (API §3.4). */
+  async get(hotelId: string, id: string): Promise<LeadSummary> {
+    return this.prisma.withTenant(hotelId, async (tx) => {
+      const lead = await tx.lead.findFirst({ where: { id, deletedAt: null } });
+      if (!lead) throw this.notFound(id);
+      return this.toSummary(lead);
+    });
+  }
+
+  /** `PATCH /v1/admin/leads/:id` (API §3.4) — status/owner/notes updates
+   * only; contact/trip details come from the guest (chat) or manual entry,
+   * never an admin edit. */
+  async update(
+    hotelId: string,
+    id: string,
+    body: UpdateLeadRequest,
+  ): Promise<LeadSummary> {
+    const data: {
+      status?: PrismaLeadStatus;
+      assignedOwnerId?: string | null;
+      notes?: string | null;
+    } = {};
+    if (body.status !== undefined)
+      data.status = this.requireStatus(body.status);
+    if (body.notes !== undefined) {
+      if (body.notes !== null && typeof body.notes !== 'string') {
+        throw new BadRequestException({
+          error: {
+            code: 'INVALID_FIELD',
+            message: '"notes" must be a string or null.',
+            requestId: randomUUID(),
+          },
+        });
+      }
+      data.notes = body.notes;
+    }
+
+    return this.prisma.withTenant(hotelId, async (tx) => {
+      const existing = await tx.lead.findFirst({
+        where: { id, deletedAt: null },
+      });
+      if (!existing) throw this.notFound(id);
+
+      if (body.assignedOwnerId !== undefined) {
+        if (body.assignedOwnerId !== null) {
+          const membership = await tx.hotelMembership.findFirst({
+            where: { userId: body.assignedOwnerId, hotelId },
+          });
+          if (!membership) {
+            throw new BadRequestException({
+              error: {
+                code: 'INVALID_OWNER',
+                message: `"${body.assignedOwnerId}" has no membership for this hotel.`,
+                requestId: randomUUID(),
+              },
+            });
+          }
+        }
+        data.assignedOwnerId = body.assignedOwnerId;
+      }
+
+      const updated = await tx.lead.update({ where: { id }, data });
+      return this.toSummary(updated);
+    });
+  }
+
+  /** `POST /v1/admin/leads` (API §3.4) — manual entry for a phone or walk-in
+   * inquiry. `conversationId` stays `null` — that's what distinguishes it
+   * from a chat-captured lead (findings-log.md #15: no stored `source`
+   * column, derived instead). `consentGiven: true` — a staff member directly
+   * captured this from a real interaction with the guest, the same
+   * affirmative-step reasoning `EscalationsService.captureContact` uses. */
+  async createManual(
+    hotelId: string,
+    body: CreateManualLeadRequest,
+  ): Promise<LeadSummary> {
+    if (!body.name && !body.email && !body.phone) {
+      throw new BadRequestException({
+        error: {
+          code: 'MISSING_CONTACT_INFO',
+          message: 'At least one of "name", "email", or "phone" is required.',
+          requestId: randomUUID(),
+        },
+      });
+    }
+    return this.prisma.withTenant(hotelId, async (tx) => {
+      const lead = await tx.lead.create({
+        data: {
+          hotelId,
+          conversationId: null,
+          consentGiven: true,
+          name: body.name,
+          email: body.email,
+          phone: body.phone,
+          travelDates: body.travelDates,
+          budget: body.budget,
+          guestCount: body.guestCount,
+          reasonForStay: body.reasonForStay,
+          preferredRoom: body.preferredRoom,
+          notes: body.notes,
+        },
+      });
+      // Dashboard `leadCount` rollup (findings-log.md #12) — a manual entry
+      // is a real lead the same as a chat-captured one.
+      await bumpDailyMetric(tx, hotelId, { leadCount: 1 });
+      return this.toSummary(lead);
+    });
+  }
+
+  private requireStatus(value: string): (typeof LEAD_STATUSES)[number] {
+    if (!LEAD_STATUSES.includes(value as never)) {
+      throw new BadRequestException({
+        error: {
+          code: 'INVALID_STATUS',
+          message: `"status" must be one of: ${LEAD_STATUSES.join(', ')}.`,
+          requestId: randomUUID(),
+        },
+      });
+    }
+    return value as (typeof LEAD_STATUSES)[number];
+  }
+
+  private notFound(id: string): NotFoundException {
+    return new NotFoundException({
+      error: {
+        code: 'LEAD_NOT_FOUND',
+        message: `No lead with id "${id}".`,
+        requestId: randomUUID(),
+      },
+    });
+  }
+
+  private toSummary(lead: {
+    id: string;
+    status: string;
+    conversationId: string | null;
+    name: string | null;
+    email: string | null;
+    phone: string | null;
+    travelDates: string | null;
+    budget: string | null;
+    guestCount: number | null;
+    reasonForStay: string | null;
+    preferredRoom: string | null;
+    consentGiven: boolean;
+    leadScore: number | null;
+    assignedOwnerId: string | null;
+    notes: string | null;
+    createdAt: Date;
+  }): LeadSummary {
+    return {
+      id: lead.id,
+      status: lead.status as LeadSummary['status'],
+      source: lead.conversationId === null ? 'manual' : 'chat',
+      conversationId: lead.conversationId,
+      name: lead.name,
+      email: lead.email,
+      phone: lead.phone,
+      travelDates: lead.travelDates,
+      budget: lead.budget,
+      guestCount: lead.guestCount,
+      reasonForStay: lead.reasonForStay,
+      preferredRoom: lead.preferredRoom,
+      consentGiven: lead.consentGiven,
+      leadScore: lead.leadScore,
+      assignedOwnerId: lead.assignedOwnerId,
+      notes: lead.notes,
+      createdAt: lead.createdAt.toISOString(),
+    };
   }
 
   private requireField(value: unknown): LeadField {

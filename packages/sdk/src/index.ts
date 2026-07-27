@@ -12,6 +12,7 @@ import type {
   ConversationDetail,
   ConversationSummary,
   CreateKnowledgeDocumentResponse,
+  CreateManualLeadRequest,
   DailyMetricRow,
   DocumentStatus,
   EntityByParam,
@@ -24,6 +25,8 @@ import type {
   KnowledgeChunkPreview,
   KnowledgeDocumentStageStatus,
   KnowledgeDocumentSummary,
+  LeadStatus,
+  LeadSummary,
   Paginated,
   QAScoreDetail,
   QAScoreInput,
@@ -31,6 +34,7 @@ import type {
   SubmitEscalationChoiceResponse,
   SubmitLeadAnswerRequest,
   SubmitLeadAnswerResponse,
+  UpdateLeadRequest,
 } from "@hospitality/types";
 
 // Re-exported so frontend code has one import site for these shapes.
@@ -40,6 +44,7 @@ export type {
   ConversationDetail,
   ConversationSummary,
   CreateKnowledgeDocumentResponse,
+  CreateManualLeadRequest,
   DailyMetricRow,
   EntityByParam,
   EntityParam,
@@ -49,6 +54,8 @@ export type {
   KnowledgeChunkPreview,
   KnowledgeDocumentStageStatus,
   KnowledgeDocumentSummary,
+  LeadStatus,
+  LeadSummary,
   Paginated,
   QAScoreDetail,
   QAScoreInput,
@@ -56,6 +63,7 @@ export type {
   SubmitEscalationChoiceResponse,
   SubmitLeadAnswerRequest,
   SubmitLeadAnswerResponse,
+  UpdateLeadRequest,
 } from "@hospitality/types";
 
 /** Base URL of the api. Overridable for local dev / preview deploys. */
@@ -459,6 +467,90 @@ export async function flagForPlaybook(
     throw new Error(`flag-for-playbook failed: ${res.status}`);
   }
   return (await res.json()) as FlagForPlaybookResponse;
+}
+
+/** Inbox list — `GET /v1/admin/leads` (API §3.4). */
+export async function listLeads(
+  accessToken: string,
+  opts: {
+    status?: LeadStatus;
+    cursor?: string;
+    limit?: number;
+    hotelId?: string;
+  } = {},
+): Promise<Paginated<LeadSummary>> {
+  const params = new URLSearchParams();
+  if (opts.status) params.set("status", opts.status);
+  if (opts.cursor) params.set("cursor", opts.cursor);
+  if (opts.limit) params.set("limit", String(opts.limit));
+  if (opts.hotelId) params.set("hotelId", opts.hotelId);
+  const qs = params.toString();
+  const res = await fetch(`${baseUrl()}/v1/admin/leads${qs ? `?${qs}` : ""}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!res.ok) {
+    throw new Error(`lead list failed: ${res.status}`);
+  }
+  return (await res.json()) as Paginated<LeadSummary>;
+}
+
+/** `GET /v1/admin/leads/:id` (API §3.4). */
+export async function getLead(
+  accessToken: string,
+  id: string,
+  opts: { hotelId?: string } = {},
+): Promise<LeadSummary> {
+  const qs = opts.hotelId ? `?hotelId=${encodeURIComponent(opts.hotelId)}` : "";
+  const res = await fetch(`${baseUrl()}/v1/admin/leads/${id}${qs}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!res.ok) {
+    throw new Error(`lead fetch failed: ${res.status}`);
+  }
+  return (await res.json()) as LeadSummary;
+}
+
+/** Status/owner/notes updates — `PATCH /v1/admin/leads/:id` (API §3.4). */
+export async function updateLead(
+  accessToken: string,
+  id: string,
+  body: UpdateLeadRequest,
+  opts: { hotelId?: string } = {},
+): Promise<LeadSummary> {
+  const qs = opts.hotelId ? `?hotelId=${encodeURIComponent(opts.hotelId)}` : "";
+  const res = await fetch(`${baseUrl()}/v1/admin/leads/${id}${qs}`, {
+    method: "PATCH",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    throw new Error(`lead update failed: ${res.status}`);
+  }
+  return (await res.json()) as LeadSummary;
+}
+
+/** Manual entry (a phone or walk-in inquiry) — `POST /v1/admin/leads` (API §3.4). */
+export async function createManualLead(
+  accessToken: string,
+  body: CreateManualLeadRequest,
+  opts: { hotelId?: string } = {},
+): Promise<LeadSummary> {
+  const qs = opts.hotelId ? `?hotelId=${encodeURIComponent(opts.hotelId)}` : "";
+  const res = await fetch(`${baseUrl()}/v1/admin/leads${qs}`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    throw new Error(`manual lead creation failed: ${res.status}`);
+  }
+  return (await res.json()) as LeadSummary;
 }
 
 // API §2.4 — GET /v1/chat/bootstrap
