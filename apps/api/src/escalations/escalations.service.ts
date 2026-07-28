@@ -6,6 +6,7 @@ import {
 import { randomUUID } from 'node:crypto';
 import type { Prisma } from '@prisma/client';
 import { bumpDailyMetric } from '../analytics/daily-metrics';
+import { notifyHotelMembers } from '../notifications/notify';
 import { PrismaService } from '../common/prisma/prisma.service';
 
 export type EscalationChoice = 'connect_now' | 'contact_me';
@@ -44,8 +45,14 @@ export class EscalationsService {
       const escalation = await tx.escalation.create({
         data: { hotelId, conversationId, reason },
       });
-      // Dashboard `escalationCount` rollup (findings-log.md #12).
+      // Dashboard `escalationCount` rollup (findings-log.md #12) + an
+      // ESCALATION notification (findings-log.md #21).
       await bumpDailyMetric(tx, hotelId, { escalationCount: 1 });
+      await notifyHotelMembers(tx, hotelId, 'ESCALATION', {
+        escalationId: escalation.id,
+        conversationId,
+        reason,
+      });
       return escalation.id;
     });
   }
@@ -129,12 +136,19 @@ export class EscalationsService {
         data: { ...data, consentGiven: true },
       });
     } else {
-      await tx.lead.create({
+      const lead = await tx.lead.create({
         data: { hotelId, conversationId, ...data, consentGiven: true },
       });
-      // Dashboard `leadCount` rollup (findings-log.md #12) — same "new,
-      // consented lead" rule LeadsService.submitAnswer uses.
+      // Dashboard `leadCount` rollup (findings-log.md #12) + a NEW_LEAD
+      // notification (findings-log.md #21) — same "new, consented lead"
+      // rule LeadsService.submitAnswer uses.
       await bumpDailyMetric(tx, hotelId, { leadCount: 1 });
+      await notifyHotelMembers(tx, hotelId, 'NEW_LEAD', {
+        leadId: lead.id,
+        name: lead.name,
+        email: lead.email,
+        phone: lead.phone,
+      });
     }
   }
 

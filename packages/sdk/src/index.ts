@@ -32,6 +32,9 @@ import type {
   LeadStatus,
   LeadSummary,
   MissingInformationGap,
+  NotificationStatus,
+  NotificationSummary,
+  NotificationType,
   Paginated,
   Priority,
   PreviewBundleResponse,
@@ -72,6 +75,9 @@ export type {
   LeadStatus,
   LeadSummary,
   MissingInformationGap,
+  NotificationStatus,
+  NotificationSummary,
+  NotificationType,
   Paginated,
   Priority,
   PreviewBundleResponse,
@@ -486,6 +492,51 @@ export async function getGapsAnalytics(
     throw new Error(`gaps analytics fetch failed: ${res.status}`);
   }
   return (await res.json()) as MissingInformationGap[];
+}
+
+/** `GET /v1/admin/notifications` (API §3.7) — scoped to the calling admin's
+ * own notifications, not every teammate's (findings-log.md #21). */
+export async function listNotifications(
+  accessToken: string,
+  opts: {
+    status?: NotificationStatus;
+    cursor?: string;
+    limit?: number;
+    hotelId?: string;
+  } = {},
+): Promise<Paginated<NotificationSummary>> {
+  const params = new URLSearchParams();
+  if (opts.status) params.set("status", opts.status);
+  if (opts.cursor) params.set("cursor", opts.cursor);
+  if (opts.limit) params.set("limit", String(opts.limit));
+  if (opts.hotelId) params.set("hotelId", opts.hotelId);
+  const qs = params.toString();
+  const res = await fetch(
+    `${baseUrl()}/v1/admin/notifications${qs ? `?${qs}` : ""}`,
+    { headers: { Authorization: `Bearer ${accessToken}` } },
+  );
+  if (!res.ok) {
+    throw new Error(`notification list failed: ${res.status}`);
+  }
+  return (await res.json()) as Paginated<NotificationSummary>;
+}
+
+/** `PATCH /v1/admin/notifications/:id/read` (API §3.7) — the only status
+ * transition this project performs today (findings-log.md #21). */
+export async function markNotificationRead(
+  accessToken: string,
+  id: string,
+  opts: { hotelId?: string } = {},
+): Promise<NotificationSummary> {
+  const qs = opts.hotelId ? `?hotelId=${encodeURIComponent(opts.hotelId)}` : "";
+  const res = await fetch(`${baseUrl()}/v1/admin/notifications/${id}/read${qs}`, {
+    method: "PATCH",
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!res.ok) {
+    throw new Error(`notification mark-read failed: ${res.status}`);
+  }
+  return (await res.json()) as NotificationSummary;
 }
 
 /** Triage list (UX §11) — `GET /v1/admin/conversations` (API §3.4). */
