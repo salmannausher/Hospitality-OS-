@@ -31,6 +31,7 @@ import type {
   KnowledgeDocumentSummary,
   LeadStatus,
   LeadSummary,
+  MissingInformationGap,
   Paginated,
   Priority,
   PreviewBundleResponse,
@@ -41,6 +42,7 @@ import type {
   SubmitEscalationChoiceResponse,
   SubmitLeadAnswerRequest,
   SubmitLeadAnswerResponse,
+  TopicDistributionRow,
   UpdateBrandSettingsRequest,
   UpdateLeadRequest,
 } from "@hospitality/types";
@@ -69,6 +71,7 @@ export type {
   KnowledgeDocumentSummary,
   LeadStatus,
   LeadSummary,
+  MissingInformationGap,
   Paginated,
   Priority,
   PreviewBundleResponse,
@@ -79,6 +82,7 @@ export type {
   SubmitEscalationChoiceResponse,
   SubmitLeadAnswerRequest,
   SubmitLeadAnswerResponse,
+  TopicDistributionRow,
   UpdateBrandSettingsRequest,
   UpdateLeadRequest,
 } from "@hospitality/types";
@@ -444,6 +448,44 @@ export async function getDailyAnalytics(
     throw new Error(`daily analytics fetch failed: ${res.status}`);
   }
   return (await res.json()) as DailyMetricRow[];
+}
+
+/** "Guests Ask Most About" (UX §12) — `GET /v1/admin/analytics/topics` (API
+ * §3.6). Sorted descending by `count`. */
+export async function getTopicsAnalytics(
+  accessToken: string,
+  opts: { hotelId?: string } = {},
+): Promise<TopicDistributionRow[]> {
+  const qs = opts.hotelId ? `?hotelId=${encodeURIComponent(opts.hotelId)}` : "";
+  const res = await fetch(`${baseUrl()}/v1/admin/analytics/topics${qs}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!res.ok) {
+    throw new Error(`topics analytics fetch failed: ${res.status}`);
+  }
+  return (await res.json()) as TopicDistributionRow[];
+}
+
+/** "Missing Information" panel (UX §12) — `GET /v1/admin/analytics/gaps?from=&to=`
+ * (API §3.6). `from`/`to` are optional; the endpoint defaults to a trailing
+ * 7-day window ending now when omitted. */
+export async function getGapsAnalytics(
+  accessToken: string,
+  opts: { from?: string; to?: string; hotelId?: string } = {},
+): Promise<MissingInformationGap[]> {
+  const params = new URLSearchParams();
+  if (opts.from) params.set("from", opts.from);
+  if (opts.to) params.set("to", opts.to);
+  if (opts.hotelId) params.set("hotelId", opts.hotelId);
+  const qs = params.toString();
+  const res = await fetch(
+    `${baseUrl()}/v1/admin/analytics/gaps${qs ? `?${qs}` : ""}`,
+    { headers: { Authorization: `Bearer ${accessToken}` } },
+  );
+  if (!res.ok) {
+    throw new Error(`gaps analytics fetch failed: ${res.status}`);
+  }
+  return (await res.json()) as MissingInformationGap[];
 }
 
 /** Triage list (UX §11) — `GET /v1/admin/conversations` (API §3.4). */
