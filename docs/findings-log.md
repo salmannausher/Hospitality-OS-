@@ -150,6 +150,22 @@
 **Fix chosen — and why:** Gave every `<th>`/`<td>` in the Leads table its own right padding (`0.5rem 1rem 0.5rem 0`), rather than relying on incidental whitespace from neighboring cell content. Rejected: leaving it as "it happens to work" precedent — it doesn't generalize, as this page just demonstrated.
 **Verification:** Confirmed live in-browser — reloaded the page and every column now reads with clear separation.
 
+### 17. WCAG AA contrast rule doesn't specify which color plays which role — FIXED (2026-07-28)
+
+**Found:** Sprint 4, starting ticket 4 (Brand Settings, API §3.5, UI Design System §10).
+**Problem:** API §3.5 requires PATCH to "validate WCAG AA contrast for the color pair before saving," and UI Design System §10 says "every brand-color/neutral-background combination is contrast-checked" — but neither doc says which of `BrandSettings.primaryColor`/`secondaryColor` plays foreground vs. background, against which specific neutral value, or the exact ratio threshold (AA itself has two: 4.5:1 normal text, 3:1 large text/UI components).
+**Root cause:** Genuinely undecided in the docs — §10 states the *policy* (AA minimum, checked at save time) without specifying the *mechanics* (which role each color plays, which neutral it's paired with).
+**Fix chosen — and why:** Treated `primaryColor`/`secondaryColor` (whichever are set) as button/badge **background** colors with white (`#FFFFFF`) **foreground** text — matching the widget mechanism doc's own framing of `--brand-primary` as the CSS variable used for accent/CTA styling (§1), and the most common real failure mode for a "brand color" field (a light pastel brand color becomes unreadable under white button text). Applied the stricter 4.5:1 (normal-text) threshold uniformly rather than the 3:1 large-text carve-out, since nothing distinguishes button-label size from body text at this layer. Rejected: treating brand colors as foreground text color on a white page background instead — equally defensible, but less consistent with how `--brand-primary` is actually described as being used (accent/CTA backgrounds, not body text color).
+**Verification:** `apps/api/color-contrast.spec.ts` (13/13 unit tests — the pure ratio/AA-pass function) plus `apps/api/verify-brand-settings.mjs` (13/13 checks) — a real pale-yellow `primaryColor` (#FFFF66) correctly fails at a 1.06:1 ratio, a real dark navy (#1A1A2E) correctly passes, and both `primaryColor`/`secondaryColor` failing at once are both named in the same `422` response, not just the first.
+
+### 18. Four `BrandSettings` fields are stored but never consumed anywhere — DEFERRED
+
+**Found:** Sprint 4, starting ticket 4 (Brand Settings), while checking which fields `ChatService`/`PromptsService` actually read before building the settings form.
+**Problem:** `formalityNote`, `emojiAllowed`, `signOff`, and `secondaryColor` all exist on the `BrandSettings` model and will become admin-editable through this ticket's form — but a full-codebase grep (`apps/api/src`, `packages/prompts`) turns up zero references to any of the four outside the schema itself. An admin can set them and see nothing change for the guest.
+**Root cause:** All four were scaffolded into the schema (DB §"Brand & Prompts") ahead of the Sprint 1/3 chat-pipeline and prompt-assembly work ever being told to read them — a forward-looking schema field that never got wired up, not a regression.
+**Fix chosen — and why:** Deliberately left unwired. Building the guest-facing behavior these fields imply (persona formality overrides, emoji-in-response gating, a sign-off line in generated replies, a second brand color actually rendered somewhere) is real prompt-assembly/generation work — a chat-pipeline change, not "a surface over data Sprints 1–3 already produce" (Sprint 4's own Definition of Done). The form still exposes all four as editable (so admins can set them now without the fields silently vanishing later) with a plain note that they're not yet reflected in the live guest experience.
+**Verification:** N/A — deliberately unbuilt. Revisit whenever prompt-assembly/`bootstrap()` work picks these up.
+
 ---
 
-**Next entry number: 17.**
+**Next entry number: 19.**

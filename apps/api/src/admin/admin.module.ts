@@ -15,6 +15,8 @@ import { AnalyticsService } from './analytics/analytics.service';
 import { AdminConversationsController } from './conversations/conversations.controller';
 import { ConversationsService } from './conversations/conversations.service';
 import { AdminLeadsController } from './leads/leads.controller';
+import { AdminBrandController } from './brand/brand-settings.controller';
+import { BrandSettingsService } from './brand/brand-settings.service';
 
 /** Admin API surface (API §3) — session/hotels/knowledge/etc. modules land here as they're built. */
 @Module({
@@ -27,6 +29,7 @@ import { AdminLeadsController } from './leads/leads.controller';
     AdminAnalyticsController,
     AdminConversationsController,
     AdminLeadsController,
+    AdminBrandController,
   ],
   providers: [
     HotelScopeGuard,
@@ -34,6 +37,7 @@ import { AdminLeadsController } from './leads/leads.controller';
     RelationshipsService,
     AnalyticsService,
     ConversationsService,
+    BrandSettingsService,
   ],
 })
 export class AdminModule {}

@@ -17,7 +17,7 @@ const NAV_ITEMS = [
   { label: "Conversations", href: "/admin/conversations" },
   { label: "Leads", href: "/admin/leads" },
   { label: "Analytics", href: null },
-  { label: "Brand Settings", href: null },
+  { label: "Brand Settings", href: "/admin/brand" },
   { label: "Prompt Settings", href: null },
   { label: "Integrations", href: null },
   { label: "Billing", href: null },

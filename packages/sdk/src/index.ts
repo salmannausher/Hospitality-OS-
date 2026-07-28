@@ -8,7 +8,9 @@
 import type {
   AdminSessionResponse,
   BootstrapResponse,
+  BrandSettingsResponse,
   ChatSSEEvent,
+  ContrastFailureDetail,
   ConversationDetail,
   ConversationSummary,
   CreateKnowledgeDocumentResponse,
@@ -34,6 +36,7 @@ import type {
   SubmitEscalationChoiceResponse,
   SubmitLeadAnswerRequest,
   SubmitLeadAnswerResponse,
+  UpdateBrandSettingsRequest,
   UpdateLeadRequest,
 } from "@hospitality/types";
 
@@ -41,6 +44,8 @@ import type {
 export type {
   AdminSessionResponse,
   BootstrapResponse,
+  BrandSettingsResponse,
+  ContrastFailureDetail,
   ConversationDetail,
   ConversationSummary,
   CreateKnowledgeDocumentResponse,
@@ -63,6 +68,7 @@ export type {
   SubmitEscalationChoiceResponse,
   SubmitLeadAnswerRequest,
   SubmitLeadAnswerResponse,
+  UpdateBrandSettingsRequest,
   UpdateLeadRequest,
 } from "@hospitality/types";
 
@@ -551,6 +557,66 @@ export async function createManualLead(
     throw new Error(`manual lead creation failed: ${res.status}`);
   }
   return (await res.json()) as LeadSummary;
+}
+
+/** Thrown by `updateBrandSettings` on a `422 CONTRAST_FAILURE` (API §3.5) —
+ * carries the named failing color pair(s) so the caller can show exactly
+ * what to fix, not just a generic error string. */
+export class BrandContrastError extends Error {
+  details: ContrastFailureDetail[];
+  constructor(message: string, details: ContrastFailureDetail[]) {
+    super(message);
+    this.name = "BrandContrastError";
+    this.details = details;
+  }
+}
+
+/** `GET /v1/admin/brand` (API §3.5) — always returns a usable object, even
+ * for a hotel with no `BrandSettings` row yet (`updatedAt: null` signals that). */
+export async function getBrandSettings(
+  accessToken: string,
+  opts: { hotelId?: string } = {},
+): Promise<BrandSettingsResponse> {
+  const qs = opts.hotelId ? `?hotelId=${encodeURIComponent(opts.hotelId)}` : "";
+  const res = await fetch(`${baseUrl()}/v1/admin/brand${qs}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!res.ok) {
+    throw new Error(`brand settings fetch failed: ${res.status}`);
+  }
+  return (await res.json()) as BrandSettingsResponse;
+}
+
+/** `PATCH /v1/admin/brand` (API §3.5) — throws `BrandContrastError` on a
+ * `422 CONTRAST_FAILURE` (WCAG AA check, findings-log.md #17), a plain
+ * `Error` for any other failure. */
+export async function updateBrandSettings(
+  accessToken: string,
+  body: UpdateBrandSettingsRequest,
+  opts: { hotelId?: string } = {},
+): Promise<BrandSettingsResponse> {
+  const qs = opts.hotelId ? `?hotelId=${encodeURIComponent(opts.hotelId)}` : "";
+  const res = await fetch(`${baseUrl()}/v1/admin/brand${qs}`, {
+    method: "PATCH",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    if (res.status === 422) {
+      const payload = (await res.json()) as {
+        error: { message: string; details?: ContrastFailureDetail[] };
+      };
+      throw new BrandContrastError(
+        payload.error.message,
+        payload.error.details ?? [],
+      );
+    }
+    throw new Error(`brand settings update failed: ${res.status}`);
+  }
+  return (await res.json()) as BrandSettingsResponse;
 }
 
 // API §2.4 — GET /v1/chat/bootstrap
