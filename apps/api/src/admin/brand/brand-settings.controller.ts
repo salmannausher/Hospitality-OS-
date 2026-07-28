@@ -6,10 +6,9 @@ import { HotelScopeGuard } from '../hotel-scope.guard';
 import { BrandSettingsService } from './brand-settings.service';
 
 /** `/v1/admin/brand` (API §3.5) — `BrandSettings` read/write, with WCAG AA
- * contrast validated at save time (findings-log.md #17). Only HOTEL_ADMIN+
- * should be able to touch this per API §1's role table, but role-gating
- * itself is Sprint 4 ticket 8's job across every admin route, not built
- * per-route here. */
+ * contrast validated at save time (findings-log.md #17). `HotelScopeGuard`
+ * blocks a `VIEWER` from the `PATCH` automatically (findings-log.md #24) —
+ * no doc names any further per-role restriction here, so none is added. */
 @Controller('v1/admin/brand')
 @UseGuards(SupabaseAuthGuard, HotelScopeGuard)
 export class AdminBrandController {

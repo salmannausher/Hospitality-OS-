@@ -19,12 +19,15 @@ import { AdminBrandController } from './brand/brand-settings.controller';
 import { BrandSettingsService } from './brand/brand-settings.service';
 import { AdminNotificationsController } from './notifications/notifications.controller';
 import { NotificationsService } from './notifications/notifications.service';
+import { HotelsController } from './hotels/hotels.controller';
+import { HotelsService } from './hotels/hotels.service';
 
 /** Admin API surface (API §3) — session/hotels/knowledge/etc. modules land here as they're built. */
 @Module({
   imports: [AuthModule, KnowledgeModule, AiModule, LeadsModule],
   controllers: [
     SessionController,
+    HotelsController,
     AdminKnowledgeController,
     AdminEntitiesController,
     AdminRelationshipsController,
@@ -36,6 +39,7 @@ import { NotificationsService } from './notifications/notifications.service';
   ],
   providers: [
     HotelScopeGuard,
+    HotelsService,
     EntitiesService,
     RelationshipsService,
     AnalyticsService,

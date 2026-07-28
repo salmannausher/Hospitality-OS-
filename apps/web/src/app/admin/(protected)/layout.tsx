@@ -12,7 +12,7 @@ import { useAdminAuth } from "@/lib/admin-auth-context";
 // UX §8 screen map. Screens land here as they're built (docs/14-sprint-backlog.md).
 const NAV_ITEMS = [
   { label: "Dashboard", href: "/admin" },
-  { label: "Hotels", href: null, agencyOnly: true },
+  { label: "Hotels", href: "/admin/hotels", agencyOnly: true },
   { label: "Knowledge Base", href: "/admin/knowledge" },
   { label: "Relationships", href: "/admin/relationships" },
   { label: "Conversations", href: "/admin/conversations" },

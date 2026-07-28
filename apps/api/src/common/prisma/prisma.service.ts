@@ -104,4 +104,45 @@ export class PrismaService
       SELECT * FROM admin_hotels_for_user(${userId})
     `;
   }
+
+  /**
+   * Resolve a user's effective `Role` for one specific hotel — their direct
+   * `HotelMembership.role` if one exists, else the `OrganizationMembership.role`
+   * for that hotel's org (Agency/Super Admin's access path, findings-log.md
+   * #22), else `null`. Backs `HotelScopeGuard`'s role-gating (API §3.1,
+   * Sprint 4 ticket 8) via the SECURITY DEFINER `admin_hotel_role_for_user`
+   * function (migration `9_admin_hotel_org_access`) — same RLS-bypass-for-
+   * exactly-this-lookup shape as `resolveMemberHotels`.
+   */
+  async resolveHotelRole(
+    userId: string,
+    hotelId: string,
+  ): Promise<string | null> {
+    const rows = await this.$queryRaw<
+      Array<{ admin_hotel_role_for_user: string | null }>
+    >`
+      SELECT admin_hotel_role_for_user(${userId}, ${hotelId})
+    `;
+    return rows[0]?.admin_hotel_role_for_user ?? null;
+  }
+
+  /**
+   * Insert a new `Hotel` row bypassing `Hotel`'s own RLS policy, which no
+   * `app_role` connection can otherwise satisfy for a row that doesn't exist
+   * yet (findings-log.md #22). Calls the SECURITY DEFINER
+   * `admin_create_hotel` function (migration `10_admin_create_hotel`) — role
+   * validation and `organizationId` resolution happen in `HotelsService`
+   * before this is ever called; this does only the one operation app_role
+   * genuinely cannot perform itself.
+   */
+  async createHotel(
+    organizationId: string,
+    name: string,
+    slug: string,
+  ): Promise<{ id: string; name: string; slug: string }> {
+    const rows = await this.$queryRaw<
+      Array<{ id: string; name: string; slug: string }>
+    >`SELECT * FROM admin_create_hotel(${organizationId}, ${name}, ${slug})`;
+    return rows[0];
+  }
 }

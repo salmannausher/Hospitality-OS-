@@ -293,6 +293,12 @@ export interface AdminSessionResponse {
     role: Role;
     hotel: { id: string; name: string; slug: string } | null;
   }>;
+  /** Every hotel the caller can actually act on — direct `HotelMembership`
+   * rows PLUS hotels reached via an `OrganizationMembership` (Agency/Super
+   * Admin's access path, findings-log.md #22). `hotelMemberships` above only
+   * ever lists direct rows, so an Agency Admin with none would otherwise see
+   * no hotels at all despite being able to act on every hotel in their org. */
+  hotels: Array<{ id: string; name: string; slug: string }>;
 }
 
 // ---------------------------------------------------------------------------
@@ -796,4 +802,27 @@ export interface EscalationNotificationPayload {
 export interface IngestionFailedNotificationPayload {
   documentId: string;
   filename: string;
+}
+
+// ---------------------------------------------------------------------------
+// API §3.1 — Hotel CRUD. `GET /v1/admin/hotels[/:id]`,
+// `PATCH /v1/admin/hotels/:id` (name/slug only — Hotel has no timezone
+// column despite the API spec mentioning one, findings-log.md #23),
+// `POST /v1/admin/hotels` (AGENCY_ADMIN only, findings-log.md #24).
+// ---------------------------------------------------------------------------
+
+export interface HotelSummary {
+  id: string;
+  name: string;
+  slug: string;
+}
+
+export interface UpdateHotelRequest {
+  name?: string;
+  slug?: string;
+}
+
+export interface CreateHotelRequest {
+  name: string;
+  slug: string;
 }

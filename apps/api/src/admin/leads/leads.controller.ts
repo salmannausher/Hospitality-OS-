@@ -8,6 +8,7 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
+import type { Role } from '@prisma/client';
 import type {
   CreateManualLeadRequest,
   UpdateLeadRequest,
@@ -15,13 +16,14 @@ import type {
 import { SupabaseAuthGuard } from '../../auth/supabase-auth.guard';
 import { LeadsService } from '../../leads/leads.service';
 import { CurrentHotelId } from '../current-hotel-id.decorator';
+import { CurrentRole } from '../current-role.decorator';
 import { HotelScopeGuard } from '../hotel-scope.guard';
 
 /** `/v1/admin/leads` (API §3.4) — the inbox list/detail/update, plus manual
  * entry for a phone or walk-in inquiry. Same `LeadsService` the guest-facing
  * `POST /v1/chat/lead` flow uses (`leads.module.ts`'s own doc comment), not a
- * second implementation. Role-gating ("MARKETING can't reassign leads," API
- * §1) is deliberately not enforced here — Sprint 4 ticket 8's job. */
+ * second implementation. `MARKETING` can't reassign leads (findings-log.md
+ * #24) — enforced in `LeadsService.update()` itself via the caller's role. */
 @Controller('v1/admin/leads')
 @UseGuards(SupabaseAuthGuard, HotelScopeGuard)
 export class AdminLeadsController {
@@ -49,10 +51,11 @@ export class AdminLeadsController {
   @Patch(':id')
   async update(
     @CurrentHotelId() hotelId: string,
+    @CurrentRole() role: Role,
     @Param('id') id: string,
     @Body() body: UpdateLeadRequest,
   ) {
-    return this.leads.update(hotelId, id, body ?? {});
+    return this.leads.update(hotelId, id, body ?? {}, role);
   }
 
   @Post()
