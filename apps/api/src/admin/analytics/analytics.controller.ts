@@ -17,6 +17,9 @@ const MS_PER_DAY = 24 * 60 * 60 * 1000;
  * tiles (today) plus a short recent trend, without requiring the caller to
  * always specify a range explicitly. */
 const DEFAULT_WINDOW_DAYS = 30;
+/** UX §12's own literal "this week" (findings-log.md #20) — the Missing
+ * Information panel's default window, overridable via `from`/`to`. */
+const DEFAULT_GAP_WINDOW_DAYS = 7;
 
 /** `GET /v1/admin/analytics/daily?from=&to=` (API §3.6). No role beyond
  * "authenticated + hotel-scoped" is called out for Analytics specifically
@@ -50,6 +53,54 @@ export class AdminAnalyticsController {
     }
 
     return this.analytics.getDaily(hotelId, from, to);
+  }
+
+  @Get('topics')
+  async topics(@CurrentHotelId() hotelId: string) {
+    return this.analytics.getTopics(hotelId);
+  }
+
+  @Get('gaps')
+  async gaps(
+    @CurrentHotelId() hotelId: string,
+    @Query('from') fromParam?: string,
+    @Query('to') toParam?: string,
+  ) {
+    // Not `parseDate`/`startOfUtcDay` — `gaps` compares against raw
+    // `Message.createdAt` timestamps, not a day-bucketed rollup like
+    // `daily`'s `DailyMetric.date`, so truncating `to` to midnight would
+    // silently exclude that day's own messages.
+    const to = this.parseDateTime('to', toParam) ?? new Date();
+    const from =
+      this.parseDateTime('from', fromParam) ??
+      new Date(to.getTime() - DEFAULT_GAP_WINDOW_DAYS * MS_PER_DAY);
+
+    if (from.getTime() > to.getTime()) {
+      throw new BadRequestException({
+        error: {
+          code: 'INVALID_RANGE',
+          message: '"from" must not be after "to".',
+          requestId: randomUUID(),
+        },
+      });
+    }
+
+    return this.analytics.getGaps(hotelId, from, to);
+  }
+
+  private parseDateTime(name: string, value?: string): Date | null {
+    if (!value) return null;
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) {
+      throw new BadRequestException({
+        error: {
+          code: 'INVALID_DATE',
+          message: `"${name}" must be a valid date, got "${value}".`,
+          requestId: randomUUID(),
+        },
+      });
+    }
+    return parsed;
   }
 
   private parseDate(name: string, value?: string): Date | null {

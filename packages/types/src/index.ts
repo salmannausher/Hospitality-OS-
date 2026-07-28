@@ -538,6 +538,28 @@ export interface DailyMetricRow {
   avgSatisfaction: number | null;
 }
 
+/** `GET /v1/admin/analytics/topics` (UX §12 "Guests Ask Most About") — the
+ * `domainTags` distribution of real conversations. `domain` is the real IA §2
+ * taxonomy (8 fixed values), not the finer-grained topic names UX §12's own
+ * mockup shows ("Airport Transfer," "Pet Policy") — nothing in the pipeline
+ * extracts anything finer than the classifier's own `domain` output
+ * (findings-log.md #20). Sorted descending by `count`. */
+export interface TopicDistributionRow {
+  domain: Domain;
+  count: number;
+}
+
+/** `GET /v1/admin/analytics/gaps` (UX §12 "Missing Information") — domains
+ * with repeated LOW-confidence turns in the queried window (default: trailing
+ * 7 days), each with a plain per-domain `recommendedAction` phrase (not
+ * content-aware — findings-log.md #20). Only domains at/above the "repeated"
+ * threshold (2) are included. Sorted descending by `lowConfidenceCount`. */
+export interface MissingInformationGap {
+  domain: Domain;
+  lowConfidenceCount: number;
+  recommendedAction: string;
+}
+
 // ---------------------------------------------------------------------------
 // API §3.4 — Conversations & QA. `GET /v1/admin/conversations` (triage list,
 // UX §11), `GET .../:id` (full thread), `POST`/`PATCH .../qa-score` (the ABS
