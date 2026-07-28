@@ -481,6 +481,46 @@ export interface EntitySearchResult {
 }
 
 // ---------------------------------------------------------------------------
+// API §3.3 — Relationship Bundles (IA §12, UX §10). `EntityRelationship` is a
+// curated, directed edge between two entities — no FK on `fromEntityId`/
+// `toEntityId` in the schema (polymorphic, validated app-side), no soft
+// delete (a real hard delete). `relationshipType`/`contextTag` are both
+// free-text `String` columns, not closed enums — the docs only ever give
+// example values ("pairs_with"/"suitable_for"/"near",
+// "anniversary"/"family"/"honeymoon"), never an exhaustive list.
+// ---------------------------------------------------------------------------
+
+export interface EntityRelationship {
+  id: string;
+  fromEntityType: EntityType;
+  fromEntityId: string;
+  toEntityType: EntityType;
+  toEntityId: string;
+  relationshipType: string;
+  contextTag: string;
+  priority: Priority;
+}
+
+/** Body for `POST /v1/admin/relationships`. */
+export interface CreateRelationshipRequest {
+  fromEntityType: EntityType;
+  fromEntityId: string;
+  toEntityType: EntityType;
+  toEntityId: string;
+  relationshipType: string;
+  contextTag: string;
+  priority?: Priority;
+}
+
+/** `POST /v1/admin/relationships/preview` response — exactly the `card` SSE
+ * event payload a guest mentioning this `contextTag` would receive (API
+ * §2.1/§3.3's "one implementation, no drift"). */
+export interface PreviewBundleResponse {
+  type: "card";
+  cards: RecommendationCard[];
+}
+
+// ---------------------------------------------------------------------------
 // API §3.6 — Analytics. `GET /v1/admin/analytics/daily` reads `DailyMetric`
 // rollups (DB §13) — never live aggregates. Powers the Dashboard's KPI tiles
 // (UX §8). `avgSatisfaction` stays `null` for every row today — no guest-

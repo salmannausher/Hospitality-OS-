@@ -14,6 +14,7 @@ const NAV_ITEMS = [
   { label: "Dashboard", href: "/admin" },
   { label: "Hotels", href: null, agencyOnly: true },
   { label: "Knowledge Base", href: "/admin/knowledge" },
+  { label: "Relationships", href: "/admin/relationships" },
   { label: "Conversations", href: "/admin/conversations" },
   { label: "Leads", href: "/admin/leads" },
   { label: "Analytics", href: null },

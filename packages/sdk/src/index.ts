@@ -15,10 +15,12 @@ import type {
   ConversationSummary,
   CreateKnowledgeDocumentResponse,
   CreateManualLeadRequest,
+  CreateRelationshipRequest,
   DailyMetricRow,
   DocumentStatus,
   EntityByParam,
   EntityParam,
+  EntityRelationship,
   EntitySearchResult,
   EntityType,
   FlagForPlaybookRequest,
@@ -30,8 +32,11 @@ import type {
   LeadStatus,
   LeadSummary,
   Paginated,
+  Priority,
+  PreviewBundleResponse,
   QAScoreDetail,
   QAScoreInput,
+  RecommendationCard,
   SubmitEscalationChoiceRequest,
   SubmitEscalationChoiceResponse,
   SubmitLeadAnswerRequest,
@@ -50,10 +55,13 @@ export type {
   ConversationSummary,
   CreateKnowledgeDocumentResponse,
   CreateManualLeadRequest,
+  CreateRelationshipRequest,
   DailyMetricRow,
   EntityByParam,
   EntityParam,
+  EntityRelationship,
   EntitySearchResult,
+  EntityType,
   FlagForPlaybookRequest,
   FlagForPlaybookResponse,
   KnowledgeChunkPreview,
@@ -62,8 +70,11 @@ export type {
   LeadStatus,
   LeadSummary,
   Paginated,
+  Priority,
+  PreviewBundleResponse,
   QAScoreDetail,
   QAScoreInput,
+  RecommendationCard,
   SubmitEscalationChoiceRequest,
   SubmitEscalationChoiceResponse,
   SubmitLeadAnswerRequest,
@@ -324,6 +335,93 @@ export async function searchEntities(
     throw new Error(`entity search failed: ${res.status}`);
   }
   return (await res.json()) as EntitySearchResult[];
+}
+
+/** `GET /v1/admin/relationships` (API §3.3) — filterable by `contextTag`;
+ * omitting it returns every relationship for the hotel (used by the bundle
+ * builder to derive the list of existing bundles client-side, since no
+ * distinct-contextTags endpoint exists). */
+export async function listRelationships(
+  accessToken: string,
+  opts: { contextTag?: string; cursor?: string; limit?: number; hotelId?: string } = {},
+): Promise<Paginated<EntityRelationship>> {
+  const params = new URLSearchParams();
+  if (opts.contextTag) params.set("contextTag", opts.contextTag);
+  if (opts.cursor) params.set("cursor", opts.cursor);
+  if (opts.limit) params.set("limit", String(opts.limit));
+  if (opts.hotelId) params.set("hotelId", opts.hotelId);
+  const qs = params.toString();
+  const res = await fetch(
+    `${baseUrl()}/v1/admin/relationships${qs ? `?${qs}` : ""}`,
+    { headers: { Authorization: `Bearer ${accessToken}` } },
+  );
+  if (!res.ok) {
+    throw new Error(`relationship list failed: ${res.status}`);
+  }
+  return (await res.json()) as Paginated<EntityRelationship>;
+}
+
+/** `POST /v1/admin/relationships` (API §3.3) — one edge in a bundle. */
+export async function createRelationship(
+  accessToken: string,
+  body: CreateRelationshipRequest,
+  opts: { hotelId?: string } = {},
+): Promise<EntityRelationship> {
+  const qs = opts.hotelId ? `?hotelId=${encodeURIComponent(opts.hotelId)}` : "";
+  const res = await fetch(`${baseUrl()}/v1/admin/relationships${qs}`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    throw new Error(`relationship creation failed: ${res.status}`);
+  }
+  return (await res.json()) as EntityRelationship;
+}
+
+/** `DELETE /v1/admin/relationships/:id` (API §3.3) — a real hard delete, no
+ * soft-delete column on this model. */
+export async function deleteRelationship(
+  accessToken: string,
+  id: string,
+  opts: { hotelId?: string } = {},
+): Promise<void> {
+  const qs = opts.hotelId ? `?hotelId=${encodeURIComponent(opts.hotelId)}` : "";
+  const res = await fetch(`${baseUrl()}/v1/admin/relationships/${id}${qs}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!res.ok) {
+    throw new Error(`relationship delete failed: ${res.status}`);
+  }
+}
+
+/** `POST /v1/admin/relationships/preview` (API §3.3, UX §10) — the bundle
+ * builder's live preview. Reads persisted `EntityRelationship` rows (the
+ * same `CardAssemblyService` the live guest `card` SSE event uses — "one
+ * implementation, no drift"), so it reflects whatever's actually been saved
+ * for this `contextTag`, not an unsaved draft. */
+export async function previewRelationshipBundle(
+  accessToken: string,
+  contextTag: string,
+  opts: { hotelId?: string } = {},
+): Promise<PreviewBundleResponse> {
+  const qs = opts.hotelId ? `?hotelId=${encodeURIComponent(opts.hotelId)}` : "";
+  const res = await fetch(`${baseUrl()}/v1/admin/relationships/preview${qs}`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ contextTag }),
+  });
+  if (!res.ok) {
+    throw new Error(`bundle preview failed: ${res.status}`);
+  }
+  return (await res.json()) as PreviewBundleResponse;
 }
 
 /** Dashboard KPI tiles (UX §8) — `GET /v1/admin/analytics/daily?from=&to=`
