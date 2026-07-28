@@ -629,3 +629,59 @@ export interface CreateManualLeadRequest {
   preferredRoom?: string;
   notes?: string;
 }
+
+// ---------------------------------------------------------------------------
+// API §3.5 — Brand Settings. `GET/PATCH /v1/admin/brand`, mirroring
+// `BrandSettings` (DB §"Brand & Prompts"). PATCH validates WCAG AA contrast
+// before saving (UI Design System §10) — see findings-log.md #17 for exactly
+// which color pairs get checked and why. `formalityNote`/`emojiAllowed`/
+// `signOff`/`secondaryColor` are editable here but not yet consumed by any
+// guest-facing behavior (findings-log.md #18, deliberately deferred).
+// ---------------------------------------------------------------------------
+
+export interface BrandSettingsResponse {
+  conciergeName: string;
+  tonePreset: TonePreset;
+  formalityNote: string | null;
+  emojiAllowed: boolean;
+  signOff: string | null;
+  greeting: string;
+  logoUrl: string | null;
+  primaryColor: string | null;
+  secondaryColor: string | null;
+  fontFamily: string | null;
+  bookingEngineUrl: string | null;
+  groupInquiryThreshold: number;
+  /** `null` when the hotel has no `BrandSettings` row yet — every other
+   * field above is still a real, usable default in that case (API §1's
+   * general "never a silent surprise" shape), just not yet saved. */
+  updatedAt: string | null;
+}
+
+/** Body for `PATCH /v1/admin/brand` — every field optional (a partial
+ * update), same convention as `UpdateLeadRequest`. */
+export interface UpdateBrandSettingsRequest {
+  conciergeName?: string;
+  tonePreset?: TonePreset;
+  formalityNote?: string | null;
+  emojiAllowed?: boolean;
+  signOff?: string | null;
+  greeting?: string;
+  logoUrl?: string | null;
+  primaryColor?: string | null;
+  secondaryColor?: string | null;
+  fontFamily?: string | null;
+  bookingEngineUrl?: string | null;
+  groupInquiryThreshold?: number;
+}
+
+/** One failing pair in a `422 CONTRAST_FAILURE` response body — named
+ * explicitly per API §3.5's "the failing combination named, not a silent
+ * save." */
+export interface ContrastFailureDetail {
+  field: "primaryColor" | "secondaryColor";
+  color: string;
+  against: string;
+  ratio: number;
+  required: number;
+}
