@@ -1,10 +1,11 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
-import type { LeadStatus as PrismaLeadStatus } from '@prisma/client';
+import type { LeadStatus as PrismaLeadStatus, Role } from '@prisma/client';
 import type {
   CreateManualLeadRequest,
   LeadSummary,
@@ -191,12 +192,24 @@ export class LeadsService {
 
   /** `PATCH /v1/admin/leads/:id` (API §3.4) — status/owner/notes updates
    * only; contact/trip details come from the guest (chat) or manual entry,
-   * never an admin edit. */
+   * never an admin edit. `callerRole` is checked only for the one documented
+   * restriction (findings-log.md #24): `MARKETING` can't reassign leads —
+   * every other role/field combination is unrestricted. */
   async update(
     hotelId: string,
     id: string,
     body: UpdateLeadRequest,
+    callerRole?: Role,
   ): Promise<LeadSummary> {
+    if (body.assignedOwnerId !== undefined && callerRole === 'MARKETING') {
+      throw new ForbiddenException({
+        error: {
+          code: 'LEAD_REASSIGN_FORBIDDEN',
+          message: 'Marketing cannot reassign leads.',
+          requestId: randomUUID(),
+        },
+      });
+    }
     const data: {
       status?: PrismaLeadStatus;
       assignedOwnerId?: string | null;

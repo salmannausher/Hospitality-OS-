@@ -62,6 +62,10 @@ export class SessionController {
         role: m.role,
         hotel: hotelsById.get(m.hotelId) ?? null,
       })),
+      // Direct HotelMemberships PLUS org-reached hotels (findings-log.md
+      // #22) — an Agency Admin with zero HotelMembership rows would
+      // otherwise have no way to see which hotels they can act on.
+      hotels,
     };
   }
 }

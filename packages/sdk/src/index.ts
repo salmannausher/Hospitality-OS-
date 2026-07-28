@@ -13,6 +13,7 @@ import type {
   ContrastFailureDetail,
   ConversationDetail,
   ConversationSummary,
+  CreateHotelRequest,
   CreateKnowledgeDocumentResponse,
   CreateManualLeadRequest,
   CreateRelationshipRequest,
@@ -25,6 +26,7 @@ import type {
   EntityType,
   FlagForPlaybookRequest,
   FlagForPlaybookResponse,
+  HotelSummary,
   JourneyState,
   KnowledgeChunkPreview,
   KnowledgeDocumentStageStatus,
@@ -47,6 +49,7 @@ import type {
   SubmitLeadAnswerResponse,
   TopicDistributionRow,
   UpdateBrandSettingsRequest,
+  UpdateHotelRequest,
   UpdateLeadRequest,
 } from "@hospitality/types";
 
@@ -58,6 +61,7 @@ export type {
   ContrastFailureDetail,
   ConversationDetail,
   ConversationSummary,
+  CreateHotelRequest,
   CreateKnowledgeDocumentResponse,
   CreateManualLeadRequest,
   CreateRelationshipRequest,
@@ -69,6 +73,7 @@ export type {
   EntityType,
   FlagForPlaybookRequest,
   FlagForPlaybookResponse,
+  HotelSummary,
   KnowledgeChunkPreview,
   KnowledgeDocumentStageStatus,
   KnowledgeDocumentSummary,
@@ -90,6 +95,7 @@ export type {
   SubmitLeadAnswerResponse,
   TopicDistributionRow,
   UpdateBrandSettingsRequest,
+  UpdateHotelRequest,
   UpdateLeadRequest,
 } from "@hospitality/types";
 
@@ -121,6 +127,71 @@ export async function getAdminSession(
     throw new Error(`admin session fetch failed: ${res.status}`);
   }
   return (await res.json()) as AdminSessionResponse;
+}
+
+// API §3.1 — Hotel CRUD. `:id` is the hotel itself, not a `?hotelId=` query
+// param — these don't take a separate `hotelId` option like every other
+// tenant-scoped call in this file.
+export async function listHotels(accessToken: string): Promise<HotelSummary[]> {
+  const res = await fetch(`${baseUrl()}/v1/admin/hotels`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!res.ok) {
+    throw new Error(`hotel list failed: ${res.status}`);
+  }
+  return (await res.json()) as HotelSummary[];
+}
+
+export async function getHotel(
+  accessToken: string,
+  id: string,
+): Promise<HotelSummary> {
+  const res = await fetch(`${baseUrl()}/v1/admin/hotels/${id}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!res.ok) {
+    throw new Error(`hotel fetch failed: ${res.status}`);
+  }
+  return (await res.json()) as HotelSummary;
+}
+
+export async function updateHotel(
+  accessToken: string,
+  id: string,
+  body: UpdateHotelRequest,
+): Promise<HotelSummary> {
+  const res = await fetch(`${baseUrl()}/v1/admin/hotels/${id}`, {
+    method: "PATCH",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    throw new Error(`hotel update failed: ${res.status}`);
+  }
+  return (await res.json()) as HotelSummary;
+}
+
+/** `AGENCY_ADMIN` only (findings-log.md #24) — a non-agency caller gets a
+ * `403 FORBIDDEN_ROLE`. */
+export async function createHotel(
+  accessToken: string,
+  body: CreateHotelRequest,
+): Promise<HotelSummary> {
+  const res = await fetch(`${baseUrl()}/v1/admin/hotels`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    throw new Error(`hotel create failed: ${res.status}`);
+  }
+  return (await res.json()) as HotelSummary;
 }
 
 // ---------------------------------------------------------------------------
