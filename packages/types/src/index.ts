@@ -747,3 +747,53 @@ export interface ContrastFailureDetail {
   ratio: number;
   required: number;
 }
+
+// ---------------------------------------------------------------------------
+// API §3.7 — Notifications. `GET /v1/admin/notifications` (filter by
+// `status`, cursor-paginated, scoped to the calling admin's own
+// `recipientId`), `PATCH /v1/admin/notifications/:id/read`. One row per
+// `HotelMembership` per triggering event — no broadcast/role-filter concept
+// in the schema (findings-log.md #21). `status` only ever moves
+// `PENDING` → `READ` today; `SENT`/`FAILED` imply an outbound delivery
+// channel (email/push) that doesn't exist yet.
+// ---------------------------------------------------------------------------
+
+export type NotificationType =
+  | "NEW_LEAD"
+  | "ESCALATION"
+  | "INGESTION_FAILED"
+  | "SYSTEM_ERROR"
+  | "WEEKLY_REPORT";
+
+export type NotificationStatus = "PENDING" | "SENT" | "FAILED" | "READ";
+
+export interface NotificationSummary {
+  id: string;
+  type: NotificationType;
+  payload: Record<string, unknown>;
+  status: NotificationStatus;
+  createdAt: string;
+}
+
+/** `NotificationSummary.payload` shape when `type === "NEW_LEAD"`. */
+export interface NewLeadNotificationPayload {
+  leadId: string;
+  name: string | null;
+  email: string | null;
+  phone: string | null;
+}
+
+/** `NotificationSummary.payload` shape when `type === "ESCALATION"`. */
+export interface EscalationNotificationPayload {
+  escalationId: string;
+  conversationId: string;
+  reason: string;
+}
+
+/** `NotificationSummary.payload` shape when `type === "INGESTION_FAILED"` —
+ * fires only on `Document.status === "FAILED"`, never `"NEEDS_REVIEW"`
+ * (findings-log.md #21). */
+export interface IngestionFailedNotificationPayload {
+  documentId: string;
+  filename: string;
+}

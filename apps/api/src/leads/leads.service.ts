@@ -12,6 +12,7 @@ import type {
   UpdateLeadRequest,
 } from '@hospitality/types';
 import { bumpDailyMetric } from '../analytics/daily-metrics';
+import { notifyHotelMembers } from '../notifications/notify';
 import { PrismaService } from '../common/prisma/prisma.service';
 
 const LEAD_STATUSES = [
@@ -124,11 +125,18 @@ export class LeadsService {
             },
           });
 
-      // Dashboard `leadCount` rollup (findings-log.md #12) — only a genuinely
-      // new, consented lead counts (never a decline, never a repeat field
-      // submission against the same row that's already been counted once).
+      // Dashboard `leadCount` rollup (findings-log.md #12) + a NEW_LEAD
+      // notification (findings-log.md #21) — only a genuinely new, consented
+      // lead counts (never a decline, never a repeat field submission
+      // against the same row that's already been counted once).
       if (!existing && !declined && lead.consentGiven) {
         await bumpDailyMetric(tx, hotelId, { leadCount: 1 });
+        await notifyHotelMembers(tx, hotelId, 'NEW_LEAD', {
+          leadId: lead.id,
+          name: lead.name,
+          email: lead.email,
+          phone: lead.phone,
+        });
       }
 
       // ABS §8: a decline is recorded (so the conversation never asks again)
@@ -277,6 +285,12 @@ export class LeadsService {
       // Dashboard `leadCount` rollup (findings-log.md #12) — a manual entry
       // is a real lead the same as a chat-captured one.
       await bumpDailyMetric(tx, hotelId, { leadCount: 1 });
+      await notifyHotelMembers(tx, hotelId, 'NEW_LEAD', {
+        leadId: lead.id,
+        name: lead.name,
+        email: lead.email,
+        phone: lead.phone,
+      });
       return this.toSummary(lead);
     });
   }

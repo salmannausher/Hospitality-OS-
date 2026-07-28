@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
+import { notifyHotelMembers } from '../notifications/notify';
 import { EmbeddingsService } from '../ai/embeddings.service';
 import { GatewayService, type ExtractionResult } from '../ai/gateway.service';
 import { ChunkerService, type Chunk } from './chunker.service';
@@ -513,12 +514,22 @@ export class IngestionService implements OnModuleInit {
     status: 'INDEXED' | 'NEEDS_REVIEW' | 'FAILED',
     validationIssues: string[],
   ): Promise<void> {
-    await this.prisma.withTenant(hotelId, (tx) =>
-      tx.document.update({
+    await this.prisma.withTenant(hotelId, async (tx) => {
+      const document = await tx.document.update({
         where: { id: documentId },
         data: { status, validationIssues },
-      }),
-    );
+      });
+      // INGESTION_FAILED notification (findings-log.md #21) — only on a
+      // genuinely fatal `FAILED` outcome, never `NEEDS_REVIEW` (chunks are
+      // still embedded and written there; the document is usable, just
+      // flagged for admin cleanup, not a real failure).
+      if (status === 'FAILED') {
+        await notifyHotelMembers(tx, hotelId, 'INGESTION_FAILED', {
+          documentId,
+          filename: document.filename,
+        });
+      }
+    });
   }
 
   private detectSourceType(filename: string): SourceType {
