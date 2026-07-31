@@ -119,10 +119,10 @@ Free licensed stock (Unsplash/Pexels), not AI-generated — real photography rea
 ## 12. What Still Needs Building (tracked in Sprint Backlog)
 
 - [x] Scaffold `apps/demo-bellevue` (built ahead of sequence — homepage + subpages, per [Creative Direction](18-demo-bellevue-creative-direction.md) / [UX Blueprint](19-demo-bellevue-ux-blueprint.md))
-- [ ] Build the embeddable widget script (new build target — bundled entry point, `<script>`-tag mountable, not just a React component internal to `apps/web`). `apps/demo-bellevue`'s `ConciergeWidget.tsx` is a visual-placement stub, not this.
+- [x] Build the embeddable widget script — `packages/widget-embed` (esbuild → one IIFE, `<script src=".../widget.js" data-widget-key="...">`), live-verified on a plain non-React host page: real bootstrap/chat/lead/escalation/cta pipeline, no font/color bleed from the host page, docs/08 §11 mobile full-screen takeover. Ticket 5 subsequently replaced and deleted the old visual-placement stub.
 - [ ] Author this content as actual PDF/DOCX/TXT source files for real ingestion testing (Sprint 2), not just this markdown table
 - [x] Source and add photography per §11 — hotlinked verified Unsplash IDs in `apps/demo-bellevue/src/lib/images.ts`, not yet downloaded as owned project assets
-- [ ] Wire the widget embed once Sprint 1 (chat pipeline) and the embed script both exist
+- [x] Wire the widget embed — `apps/demo-bellevue/src/app/layout.tsx` loads `packages/widget-embed`'s real bundle via `next/script`; `ConciergeWidget.tsx`'s old visual stub is deleted. Live-verified end to end on the real running site (Sprint Backlog Sprint 5 ticket 5).
 - [ ] Write real testimonial quotes into this doc — three were authored directly in `apps/demo-bellevue/src/lib/content.ts` as a stopgap (flagged in [UX Blueprint §8](19-demo-bellevue-ux-blueprint.md)) and should move here once approved
 
 ---

@@ -49,6 +49,6 @@ Unlike the numbered docs above, these change every sprint and should be checked 
 
 ## Status
 
-- **Design decision open:** four UI Design System options exist (§8a–d) — not yet chosen. Option D is a behavioral layer, not a competing look; it combines with A, B, or C.
+- **Design decision resolved:** Option A ([§8](08-ui-design-system.md)) — its BrandSettings mechanism and admin portal architecture, carrying Bellevue's real shipped materials (brass, Cormorant Garamond + Work Sans) as its first tenant. Option D ([§8d](08-ui-design-system-option-d.md)) is a behavioral layer, not a competing look — deferred to Sprint 5 ticket 6 ("if time allows"), can combine with A later without touching any token decided now. See findings-log.md #25/#26.
 - **Everything else:** stable, cross-referenced, no known contradictions as of the last consistency pass.
 - **Planning is complete — 14 documents written.** Work now happens against the [Sprint Backlog](14-sprint-backlog.md), starting with Sprint 0's Week 0 spike — check its boxes off as you go rather than re-reading the specs each session.
