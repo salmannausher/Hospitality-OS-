@@ -1,14 +1,20 @@
-"use client";
+// The real embeddable widget (Sprint 5 ticket 4) — the same pipeline logic as
+// apps/web/src/app/widget/page.tsx's harness (bootstrap → chat SSE → lead/
+// escalation/cta handling), ported to run standalone on an arbitrary
+// third-party host page rather than inside a Next.js app. Talks to the api
+// ONLY through @hospitality/sdk (API-first, Engineering Conventions §1).
+//
+// Two things differ from the apps/web harness, both because there's no
+// Next.js app around this code to lean on:
+//   - Fonts: apps/web used next/font to load Bellevue's exact faces locally.
+//     A script embedded on an arbitrary host site can't do that — this loads
+//     BrandSettings.fontFamily via a plain Google Fonts <link>, falling back
+//     to the tone preset's system-font stack when a hotel hasn't set one.
+//   - Layout: the harness floated in a dev-page flex container. This owns its
+//     real fixed corner position and the docs/08 §11 mobile full-screen
+//     takeover, via WidgetShell's `fullscreen` prop.
 
-// Widget harness, now on the real @hospitality/ui component library
-// (Sprint 5 ticket 2 — docs/08-ui-design-system.md, Option A + Bellevue's
-// real materials, findings-log.md #25/#26). Still talks to the api ONLY
-// through @hospitality/sdk (API-first, Engineering Conventions §1) — nothing
-// about the pipeline logic below changed from the Sprint 1 harness, only how
-// it renders. Now also handles every Sprint 3 SSE event (card/lead_prompt/
-// escalation/cta), which the original bare-HTML harness never rendered.
-
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import {
   getBootstrap,
   sendChatMessage,
@@ -29,9 +35,8 @@ import {
   EscalationPanel,
   type EscalationChoice,
   type EscalationContact,
+  type TonePreset,
 } from "@hospitality/ui";
-
-const WIDGET_KEY = "wk_demo_bellevue"; // the seeded Bellevue demo key
 
 type Turn =
   | { kind: "guest"; text: string }
@@ -55,7 +60,45 @@ type Turn =
       resultMessage: string | null;
     };
 
-export default function WidgetHarness() {
+const MOBILE_QUERY = "(max-width: 767px)";
+
+/** A host page has no module to import a React setter from — this is the one
+ * integration point a plain `<script>`-embedded widget can offer for "open me
+ * programmatically" (e.g. a "Ask the concierge" link elsewhere on the page):
+ * `window.dispatchEvent(new Event("hospitality-widget:open"))`. */
+export const OPEN_EVENT = "hospitality-widget:open";
+
+/** Loads a hotel's display face from Google Fonts if BrandSettings set one —
+ * the plain-CDN equivalent of what next/font does inside a Next.js app.
+ * Idempotent: skips re-adding the same <link> across re-renders/re-mounts. */
+function useGoogleFont(fontFamily: string | null | undefined) {
+  useEffect(() => {
+    if (!fontFamily) return;
+    const id = `hospitality-widget-font-${fontFamily.replace(/\s+/g, "-")}`;
+    if (document.getElementById(id)) return;
+    const link = document.createElement("link");
+    link.id = id;
+    link.rel = "stylesheet";
+    link.href = `https://fonts.googleapis.com/css2?family=${encodeURIComponent(
+      fontFamily,
+    )}:ital,wght@0,400;0,500;0,600;1,400&display=swap`;
+    document.head.appendChild(link);
+  }, [fontFamily]);
+}
+
+function useIsMobile() {
+  const [isMobile, setIsMobile] = useState(false);
+  useEffect(() => {
+    const mql = window.matchMedia(MOBILE_QUERY);
+    setIsMobile(mql.matches);
+    const onChange = (e: MediaQueryListEvent) => setIsMobile(e.matches);
+    mql.addEventListener("change", onChange);
+    return () => mql.removeEventListener("change", onChange);
+  }, []);
+  return isMobile;
+}
+
+export function WidgetEmbed({ widgetKey }: { widgetKey: string }) {
   const [boot, setBoot] = useState<BootstrapResponse | null>(null);
   const [bootError, setBootError] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
@@ -67,13 +110,25 @@ export default function WidgetHarness() {
   const [ctaLink, setCtaLink] = useState<{ label: string; url: string } | null>(null);
   const sessionId = useRef<string>("");
   const conversationId = useRef<string | null>(null);
+  const isMobile = useIsMobile();
+
+  useGoogleFont(boot?.brand.fontFamily);
+
+  useEffect(() => {
+    const onOpenRequest = () => {
+      setOpen(true);
+      setHasOpenedOnce(true);
+    };
+    window.addEventListener(OPEN_EVENT, onOpenRequest);
+    return () => window.removeEventListener(OPEN_EVENT, onOpenRequest);
+  }, []);
 
   useEffect(() => {
     sessionId.current = crypto.randomUUID();
-    getBootstrap(WIDGET_KEY)
+    getBootstrap(widgetKey)
       .then(setBoot)
       .catch((e) => setBootError(String(e?.message ?? e)));
-  }, []);
+  }, [widgetKey]);
 
   async function send(message: string, contextTag?: string) {
     if (!message.trim() || status !== "idle") return;
@@ -91,7 +146,7 @@ export default function WidgetHarness() {
     try {
       await sendChatMessage(
         {
-          widgetKey: WIDGET_KEY,
+          widgetKey,
           sessionId: sessionId.current,
           conversationId: conversationId.current,
           message,
@@ -170,7 +225,7 @@ export default function WidgetHarness() {
     if (!conversationId.current) return;
     updateLeadTurn(promptId, { stage: "submitting" });
     try {
-      const res = await submitLeadAnswer(WIDGET_KEY, {
+      await submitLeadAnswer(widgetKey, {
         conversationId: conversationId.current,
         promptId,
         field,
@@ -182,7 +237,6 @@ export default function WidgetHarness() {
         stage: "done",
         resultText: declined ? "No trouble at all." : "Got it — thank you.",
       });
-      void res;
     } catch (e) {
       setNotice(String((e as Error)?.message ?? e));
       updateLeadTurn(promptId, { stage: "value" });
@@ -198,11 +252,7 @@ export default function WidgetHarness() {
       t.map((turn) => (turn.kind === "escalation" && turn.escalationId === escalationId ? { ...turn, submitting: true } : turn)),
     );
     try {
-      const res = await submitEscalationChoice(WIDGET_KEY, {
-        escalationId,
-        choice,
-        contact,
-      });
+      const res = await submitEscalationChoice(widgetKey, { escalationId, choice, contact });
       setTurns((t) =>
         t.map((turn) =>
           turn.kind === "escalation" && turn.escalationId === escalationId
@@ -218,31 +268,30 @@ export default function WidgetHarness() {
     }
   }
 
-  if (bootError) {
-    return <p style={{ padding: "2rem", color: "#a33" }}>Bootstrap failed: {bootError}</p>;
-  }
-
-  if (!boot) {
+  if (bootError || !boot) {
+    // Fails silent on the host page rather than throwing a visible error at a
+    // guest — a missing/revoked widget key is an integration problem for
+    // whoever installed the script, not something a guest can act on.
     return null;
   }
 
   const brand = {
-    tonePreset: boot.brand.tonePreset as "CLASSIC_LUXURY" | "MODERN_LUXURY" | "BOUTIQUE" | "FAMILY_FRIENDLY",
+    tonePreset: boot.brand.tonePreset as TonePreset,
     primaryColor: boot.brand.primaryColor,
-    displayFontStack: `var(--font-cormorant), serif`,
-    bodyFontStack: `var(--font-work-sans), sans-serif`,
+    displayFontStack: boot.brand.fontFamily ? `"${boot.brand.fontFamily}", serif` : null,
   };
 
+  // Explicit px strings, not bare numbers — findings-log.md #30: bare numeric
+  // values silently produced an empty `right`/`bottom` on this element (this
+  // bundle's react-dom didn't unit-append them the way it normally would),
+  // leaving the whole widget rendered in normal document flow instead of
+  // pinned to the viewport corner.
+  const wrapperStyle: CSSProperties = isMobile
+    ? { position: "fixed", inset: open ? "0px" : "auto", right: open ? "0px" : "16px", bottom: open ? "0px" : "16px", zIndex: 2147483000 }
+    : { position: "fixed", right: "16px", bottom: "16px", zIndex: 2147483000 };
+
   return (
-    <main
-      style={{
-        minHeight: "100vh",
-        display: "flex",
-        alignItems: "flex-end",
-        justifyContent: "flex-end",
-        padding: "2rem",
-      }}
-    >
+    <div style={wrapperStyle}>
       {open ? (
         <WidgetShell
           conciergeName={boot.hotel.conciergeName}
@@ -250,6 +299,7 @@ export default function WidgetHarness() {
           brand={brand}
           logoUrl={boot.brand.logoUrl}
           avatarInitial={boot.hotel.name}
+          fullscreen={isMobile}
           onClose={() => setOpen(false)}
           ctaArea={
             ctaLink ? (
@@ -285,6 +335,7 @@ export default function WidgetHarness() {
                   border: "1px solid var(--neutral-300)",
                   borderRadius: "var(--radius-sm)",
                   padding: "8px 12px",
+                  fontFamily: "inherit",
                   fontSize: "var(--type-sm)",
                   background: "var(--neutral-0)",
                   color: "var(--neutral-900)",
@@ -299,6 +350,7 @@ export default function WidgetHarness() {
                   color: "var(--neutral-0)",
                   borderRadius: "var(--radius-sm)",
                   padding: "8px 16px",
+                  fontFamily: "inherit",
                   fontSize: "var(--type-sm)",
                   cursor: "pointer",
                 }}
@@ -405,7 +457,7 @@ export default function WidgetHarness() {
           }}
         />
       )}
-    </main>
+    </div>
   );
 }
 
@@ -457,6 +509,7 @@ function LeadValueForm({
           border: "1px solid var(--neutral-300)",
           borderRadius: "var(--radius-sm)",
           padding: "8px 12px",
+          fontFamily: "inherit",
           fontSize: "var(--type-sm)",
           background: "var(--neutral-0)",
           color: "var(--neutral-900)",
@@ -471,6 +524,7 @@ function LeadValueForm({
           color: "var(--neutral-0)",
           borderRadius: "var(--radius-sm)",
           padding: "8px 16px",
+          fontFamily: "inherit",
           fontSize: "var(--type-sm)",
           cursor: "pointer",
         }}

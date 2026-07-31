@@ -2,7 +2,13 @@
 
 import { Reveal } from "@/components/Reveal";
 import { POLICIES } from "@/lib/content";
-import { openConciergeWidget } from "@/components/ConciergeWidget";
+
+// The concierge is now the real embedded widget script (packages/widget-embed,
+// loaded in layout.tsx) — a plain `<script>` tag, not a React import, so the
+// only way another component can ask it to open is this window event.
+function openConciergeWidget() {
+  window.dispatchEvent(new Event("hospitality-widget:open"));
+}
 
 export function PracticalNotes() {
   return (

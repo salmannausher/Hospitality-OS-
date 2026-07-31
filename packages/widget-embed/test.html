@@ -1,0 +1,40 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Arbitrary third-party host page</title>
+    <style>
+      body { font-family: Arial, sans-serif; background: #eef; margin: 0; padding: 2rem; }
+      button, input { font-family: "Comic Sans MS", cursive; }
+    </style>
+  </head>
+  <body>
+    <h1>Some random hotel's own website</h1>
+    <p>
+      This page deliberately sets a silly global font on buttons/inputs, and a
+      light-blue background, to prove the widget doesn't inherit either one —
+      a manual, throwaway test harness for the built bundle, not a real page.
+    </p>
+
+    <script>
+      window.__errors = [];
+      window.addEventListener("error", (e) => window.__errors.push(String(e.error?.stack || e.message)));
+      window.addEventListener("unhandledrejection", (e) => window.__errors.push("unhandled rejection: " + String(e.reason?.stack || e.reason)));
+
+      // Append ?forceMobile to exercise WidgetEmbed's docs/08 §11 full-screen
+      // takeover path without depending on the browser tool's actual viewport
+      // size, which this test page's own resize didn't reliably affect.
+      if (location.search.includes("forceMobile")) {
+        const realMatchMedia = window.matchMedia.bind(window);
+        window.matchMedia = (query) => {
+          const mql = realMatchMedia(query);
+          if (query.includes("max-width: 767px")) {
+            return { ...mql, matches: true, addEventListener() {}, removeEventListener() {} };
+          }
+          return mql;
+        };
+      }
+    </script>
+    <script src="./dist/widget.js" data-widget-key="wk_demo_bellevue"></script>
+  </body>
+</html>

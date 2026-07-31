@@ -3,7 +3,7 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   // The shared workspace packages ship raw TypeScript (main: src/index.ts);
   // Next transpiles them rather than expecting a prebuilt dist.
-  transpilePackages: ["@hospitality/sdk", "@hospitality/types"],
+  transpilePackages: ["@hospitality/sdk", "@hospitality/types", "@hospitality/ui"],
 };
 
 export default nextConfig;

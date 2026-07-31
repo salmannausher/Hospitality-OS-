@@ -1,0 +1,74 @@
+/* @hospitality/ui — fixed tokens (docs/08-ui-design-system.md §3, §5, §6).
+   These never vary by hotel or tone preset — imported once by any app that
+   renders the guest widget. Per-hotel/per-preset tokens (color, radius, font)
+   are resolved at runtime by tokens.ts's resolveBrandTokens() and applied as
+   inline CSS custom properties on the widget root — see docs/08 §1. */
+
+[data-hospitality-widget] {
+  /* §3 — neutral scale, fixed regardless of hotel or preset */
+  --neutral-0: #faf9f7;
+  --neutral-100: #f0eeea;
+  --neutral-300: #d8d4cc;
+  --neutral-600: #6b6459;
+  --neutral-900: #1c1a16;
+
+  /* §3 — semantic tokens, fixed, deliberately muted rather than saturated */
+  --status-indexed: #5b8a6b;
+  --status-needs-review: #b98a4a;
+  --status-failed: #b15c4e;
+  --confidence-high: #5b8a6b;
+  --confidence-medium: #b98a4a;
+  --confidence-low: #b15c4e;
+  --lead-new: #8c8fa3;
+  --lead-contacted: #8fa3c9;
+  --lead-qualified: #a3b98c;
+  --lead-converted: #6b9c7a;
+  --lead-lost: #b08c8c;
+
+  /* §5 — spacing scale, 4px base unit */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --space-8: 64px;
+
+  /* §5 — elevation: one soft shadow token, nothing heavier */
+  --shadow-lifted: 0 2px 12px rgba(0, 0, 0, 0.06);
+
+  /* §4 — type scale (rem, 16px base) */
+  --type-xs: 0.75rem;
+  --type-sm: 0.875rem;
+  --type-md: 1rem;
+  --type-lg: 1.125rem;
+  --type-xl: 1.5rem;
+  --type-2xl: 2rem;
+  --type-3xl: 2.5rem;
+  --line-height-body: 1.6;
+
+  /* §6 — motion, fixed across every preset (see findings-log.md #26 for why
+     this reading wins over §2's per-preset motion column) */
+  --motion-micro: 150ms;
+  --motion-micro-ease: ease-out;
+  --motion-standard: 250ms;
+  --motion-standard-ease: ease-out;
+  --motion-panel: 350ms;
+  --motion-panel-ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --motion-typing-pulse: 1.5s;
+
+  background: var(--neutral-0);
+  color: var(--neutral-900);
+}
+
+[data-hospitality-widget] * {
+  box-sizing: border-box;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-hospitality-widget] * {
+    transition-duration: 1ms !important;
+    animation-duration: 1ms !important;
+  }
+}
