@@ -79,11 +79,20 @@ export const AGREEMENT_TOP_K = 5;
  * corroborate the top hit. Defined as the mean similarity of the runners-up
  * relative to the top chunk — several near-equal chunks → high agreement; a
  * single lone hit → 0 (the top hit is an unsupported outlier, which should
- * reduce trust even when its raw similarity looks fine). `similarities` need
+ * reduce trust even when its raw similarity looks fine) — UNLESS that lone
+ * hit is itself an atomic chunk (a whole table ChunkerService deliberately
+ * never splits, IA §6): standing alone is the correct, by-design state for
+ * one of those, not a red flag, so it gets full agreement instead of zero
+ * (findings-log.md #31 — this is what actually earned that distinction,
+ * not a blanket "trust everything lone" relaxation). `similarities` need
  * not be pre-sorted.
  */
-export function chunkAgreement(similarities: number[]): number {
-  if (similarities.length < 2) return 0;
+export function chunkAgreement(
+  similarities: number[],
+  topIsAtomic = false,
+): number {
+  if (similarities.length < 2)
+    return topIsAtomic && similarities.length === 1 ? 1 : 0;
   const sorted = [...similarities].map(clamp01).sort((a, b) => b - a);
   const top = sorted[0];
   if (top <= 0) return 0;

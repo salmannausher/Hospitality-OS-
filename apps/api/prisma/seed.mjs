@@ -19,14 +19,17 @@ const WIDGET_KEY = 'wk_demo_bellevue';
 
 // Knowledge chunks — content, domain tags, priority. This is the "hand-entered
 // content" the Sprint 1 pipeline is proven against.
+//
+// Trimmed to just the one genuine gap real ingestion doesn't cover
+// (findings-log.md #29) — every other fact this array used to hand-enter
+// (breakfast, pets, Ocean View Suite pricing, a "Garden Family Room" that
+// matched no real room, spa pricing, a "The Terrace" restaurant that matched
+// neither real one) has since been superseded by the real content in
+// prisma/content/bellevue/*, and had silently drifted out of sync with it —
+// guests were getting factually wrong answers whenever retrieval picked the
+// stale seed chunk over the real one. Never re-add a fact here that a real
+// content file already covers.
 const CHUNKS = [
-  { content: 'Breakfast is served daily from 6:30 AM to 10:30 AM in The Terrace restaurant, with both à la carte and buffet options.', domainTags: ['dining', 'policies'], priority: 'NORMAL' },
-  { content: 'The Bellevue is pet-friendly. Dogs up to 15kg are welcome for a cleaning fee of $50 per stay; please notify us in advance.', domainTags: ['policies'], priority: 'HIGH' },
-  { content: 'The Ocean View Suite sleeps two guests, features a king bed and a private balcony overlooking the sea, and starts at $480 per night.', domainTags: ['accommodation'], priority: 'NORMAL' },
-  { content: 'The Garden Family Room sleeps four with two queen beds and can connect to an adjoining room on request — ideal for families.', domainTags: ['accommodation'], priority: 'NORMAL' },
-  { content: 'Check-in is from 3:00 PM and check-out is by 11:00 AM. Early check-in and late check-out are offered subject to availability.', domainTags: ['policies'], priority: 'HIGH' },
-  { content: 'The Spa at Bellevue offers a 60-minute deep-tissue massage for $140 and a 90-minute signature facial for $180. Please book a day ahead.', domainTags: ['spa'], priority: 'NORMAL' },
-  { content: 'The Terrace serves Mediterranean cuisine with a smart-casual dress code; dinner reservations are recommended.', domainTags: ['dining'], priority: 'NORMAL' },
   { content: 'Complimentary high-speed Wi-Fi is available throughout the property, including all guest rooms and meeting spaces.', domainTags: ['property', 'policies'], priority: 'NORMAL' },
 ];
 
@@ -67,13 +70,17 @@ async function main() {
 
   await prisma.brandSettings.upsert({
     where: { hotelId: hotel.id },
-    update: {},
+    // primaryColor/fontFamily are real content decisions (docs/08 §2, findings-log.md
+    // #25/#26 — brass + Cormorant Garamond, matching apps/demo-bellevue/globals.css),
+    // synced on every reseed rather than frozen at first-create like the rest of the row.
+    update: { primaryColor: '#93702f', fontFamily: 'Cormorant Garamond' },
     create: {
       hotelId: hotel.id,
       conciergeName: 'The Bellevue Concierge',
       tonePreset: 'CLASSIC_LUXURY',
       greeting: 'Welcome to Bellevue Hotel. I’m the Bellevue Concierge — how may I help you today?',
-      primaryColor: '#2F4A3C',
+      primaryColor: '#93702f',
+      fontFamily: 'Cormorant Garamond',
     },
   });
 
@@ -90,20 +97,15 @@ async function main() {
   await prisma.restaurant.deleteMany({ where: { hotelId: hotel.id } });
   await prisma.policy.deleteMany({ where: { hotelId: hotel.id } });
 
-  // A few structured entities (the ticket's hand-entered RoomType/Restaurant/Policy).
+  // A single structured RoomType, matching the real rooms.md rate exactly
+  // (findings-log.md #29 — this used to hand-enter a second, fictional
+  // "Garden Family Room," plus a Restaurant and two Policy rows that all
+  // drifted out of sync with the real content in prisma/content/bellevue/*
+  // once it existed; ingest-bellevue.mjs is the authoritative source for
+  // Restaurant/Policy/the rest of RoomType now, not this script).
   await prisma.roomType.createMany({
     data: [
-      { hotelId: hotel.id, name: 'Ocean View Suite', view: 'Sea', capacity: 2, bedConfig: 'King', baseRateLow: 480 },
-      { hotelId: hotel.id, name: 'Garden Family Room', view: 'Garden', capacity: 4, bedConfig: 'Two Queen' },
-    ],
-  });
-  await prisma.restaurant.create({
-    data: { hotelId: hotel.id, name: 'The Terrace', cuisine: 'Mediterranean', hours: '18:00–22:30', dressCode: 'Smart casual' },
-  });
-  await prisma.policy.createMany({
-    data: [
-      { hotelId: hotel.id, topic: 'pets', ruleText: 'Dogs up to 15kg welcome for a $50 cleaning fee per stay.' },
-      { hotelId: hotel.id, topic: 'check-in', ruleText: 'Check-in from 3:00 PM, check-out by 11:00 AM.' },
+      { hotelId: hotel.id, name: 'Ocean View Suite', view: 'Sea', capacity: 2, bedConfig: 'King', baseRateLow: 750, baseRateHigh: 950 },
     ],
   });
 
@@ -118,10 +120,10 @@ async function main() {
     const literal = `[${vectors[i].join(',')}]`;
     await prisma.$executeRaw`
       INSERT INTO "Chunk"
-        ("id","hotelId","documentId","domainTags","sourceType","language","priority","lastVerifiedAt","content","embedding")
+        ("id","hotelId","documentId","domainTags","sourceType","language","priority","isAtomic","lastVerifiedAt","content","embedding")
       VALUES
         (${randomUUID()}, ${hotel.id}, ${doc.id}, ${c.domainTags}::text[], ${'TEXT'}::"DocumentSourceType",
-         'en', ${c.priority}::"Priority", now(), ${c.content}, ${literal}::vector)
+         'en', ${c.priority}::"Priority", false, now(), ${c.content}, ${literal}::vector)
     `;
   }
 

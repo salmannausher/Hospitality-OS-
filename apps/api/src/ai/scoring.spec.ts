@@ -62,6 +62,20 @@ describe('chunk agreement (AI Engine §5)', () => {
     expect(chunkAgreement([])).toBe(0);
   });
 
+  it('is 0 for a single lone hit even when marked atomic if there is no hit at all', () => {
+    expect(chunkAgreement([], true)).toBe(0);
+  });
+
+  it('is 1 for a single lone hit that is an atomic chunk (findings-log.md #31)', () => {
+    expect(chunkAgreement([0.9], true)).toBe(1);
+    expect(chunkAgreement([0.2], true)).toBe(1); // atomic exemption applies regardless of raw similarity
+  });
+
+  it('atomic exemption only applies to a truly lone hit, not once corroborators exist', () => {
+    // length >= 2 always takes the normal corroboration path, atomic or not.
+    expect(chunkAgreement([0.9, 0.1], true)).toBeLessThan(1);
+  });
+
   it('is high when runners-up nearly match the top hit', () => {
     expect(chunkAgreement([0.9, 0.88, 0.87])).toBeGreaterThan(0.9);
   });

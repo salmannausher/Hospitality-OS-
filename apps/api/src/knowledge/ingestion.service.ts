@@ -35,6 +35,17 @@ interface StageRecord {
   completedAt: Date;
 }
 
+interface EntityUpsertDelegate {
+  findFirst(args: {
+    where: Record<string, unknown>;
+  }): Promise<{ id: string } | null>;
+  update(args: {
+    where: { id: string };
+    data: Record<string, unknown>;
+  }): Promise<unknown>;
+  create(args: { data: Record<string, unknown> }): Promise<unknown>;
+}
+
 export interface DocumentSummary {
   id: string;
   filename: string;
@@ -388,18 +399,27 @@ export class IngestionService implements OnModuleInit {
       );
 
       // Write chunks + extracted entities (one tenant-scoped transaction).
-      await this.prisma.withTenant(hotelId, async (tx) => {
-        await tx.$executeRaw`DELETE FROM "Chunk" WHERE "documentId" = ${documentId}`;
-        await this.writeChunks(tx, {
-          hotelId,
-          documentId,
-          sourceType: parsed.sourceType,
-          domainTags,
-          chunks,
-          vectors,
-        });
-        await this.writeEntities(tx, hotelId, extraction);
-      });
+      // Longer timeout than the 5s default (findings-log.md #32) — writeEntities'
+      // find-then-update-or-create dedup check roughly doubles the round trips
+      // per entity versus a plain create, and a content-heavy document can
+      // extract enough entities to genuinely need more than 5s under real
+      // pooler latency; this is real necessary work, not something to shrink.
+      await this.prisma.withTenant(
+        hotelId,
+        async (tx) => {
+          await tx.$executeRaw`DELETE FROM "Chunk" WHERE "documentId" = ${documentId}`;
+          await this.writeChunks(tx, {
+            hotelId,
+            documentId,
+            sourceType: parsed.sourceType,
+            domainTags,
+            chunks,
+            vectors,
+          });
+          await this.writeEntities(tx, hotelId, extraction);
+        },
+        { timeoutMs: 20_000 },
+      );
 
       // 6. VALIDATING (IA §9) — empty chunks, missing required entity fields.
       issues.push(
@@ -485,10 +505,10 @@ export class IngestionService implements OnModuleInit {
       const literal = `[${input.vectors[i].join(',')}]`;
       await tx.$executeRaw`
         INSERT INTO "Chunk"
-          ("id","hotelId","documentId","domainTags","sourceType","language","priority","lastVerifiedAt","content","tokenCount","embedding")
+          ("id","hotelId","documentId","domainTags","sourceType","language","priority","isAtomic","lastVerifiedAt","content","tokenCount","embedding")
         VALUES
           (${randomUUID()}, ${input.hotelId}, ${input.documentId}, ${input.domainTags}::text[],
-           ${input.sourceType}::"DocumentSourceType", 'en', ${c.priority}::"Priority", now(),
+           ${input.sourceType}::"DocumentSourceType", 'en', ${c.priority}::"Priority", ${c.isAtomic}, now(),
            ${c.content}, ${c.tokenCount}, ${literal}::vector)
       `;
     }
@@ -549,6 +569,35 @@ export class IngestionService implements OnModuleInit {
 
   // --- Entity mapping: loose extracted fields → typed rows (best-effort). ---
 
+  /**
+   * Find-then-update-or-create by (hotelId + name/topic), instead of a plain
+   * `.create()` — findings-log.md #19/#29/#32: re-ingesting the same document
+   * used to create a fresh duplicate entity row every time. Not `.upsert()`:
+   * the matching unique index (migration `12_entity_dedup_constraints`) is
+   * partial (`WHERE "deletedAt" IS NULL`, so a soft-deleted row's name never
+   * blocks a new one) — `schema.prisma` can't express that, so Prisma doesn't
+   * know the index is partial and its native `ON CONFLICT` upsert wouldn't
+   * match it. A plain find-then-branch sidesteps that mismatch entirely, and
+   * is safe here since this always runs inside one document's ingestion
+   * transaction, never concurrently with another write to the same hotel.
+   */
+  private async upsertByKey(
+    // delegate-shaped helper for 8 differently-typed Prisma models below.
+    delegate: unknown,
+    keyWhere: Record<string, unknown>,
+    data: Record<string, unknown>,
+  ): Promise<void> {
+    const entityDelegate = delegate as EntityUpsertDelegate;
+    const existing = await entityDelegate.findFirst({
+      where: { ...keyWhere, deletedAt: null },
+    });
+    if (existing) {
+      await entityDelegate.update({ where: { id: existing.id }, data });
+    } else {
+      await entityDelegate.create({ data: { ...keyWhere, ...data } });
+    }
+  }
+
   private async writeEntities(
     tx: Prisma.TransactionClient,
     hotelId: string,
@@ -560,10 +609,10 @@ export class IngestionService implements OnModuleInit {
       if (!name && e.type !== 'PropertyProfile') continue;
       switch (e.type) {
         case 'RoomType':
-          await tx.roomType.create({
-            data: {
-              hotelId,
-              name: name ?? 'Unnamed room',
+          await this.upsertByKey(
+            tx.roomType,
+            { hotelId, name: name ?? 'Unnamed room' },
+            {
               view: str(f.view),
               capacity: int(f.capacity) ?? 0,
               bedConfig: str(f.bedConfig),
@@ -571,99 +620,99 @@ export class IngestionService implements OnModuleInit {
               baseRateLow: dec(f.baseRateLow),
               baseRateHigh: dec(f.baseRateHigh),
             },
-          });
+          );
           break;
         case 'Restaurant':
-          await tx.restaurant.create({
-            data: {
-              hotelId,
-              name: name!,
+          await this.upsertByKey(
+            tx.restaurant,
+            { hotelId, name: name! },
+            {
               cuisine: str(f.cuisine),
               hours: str(f.hours),
               dressCode: str(f.dressCode),
               dietaryTags: strArr(f.dietaryTags),
               reservationPolicy: str(f.reservationPolicy),
             },
-          });
+          );
           break;
         case 'SpaTreatment':
-          await tx.spaTreatment.create({
-            data: {
-              hotelId,
-              name: name!,
+          await this.upsertByKey(
+            tx.spaTreatment,
+            { hotelId, name: name! },
+            {
               durationMins: int(f.durationMins),
               price: dec(f.price),
               facility: str(f.facility),
             },
-          });
+          );
           break;
         case 'Amenity':
-          await tx.amenity.create({
-            data: {
-              hotelId,
-              name: name!,
+          await this.upsertByKey(
+            tx.amenity,
+            { hotelId, name: name! },
+            {
               hours: str(f.hours),
               location: str(f.location),
               accessRule: str(f.accessRule),
             },
-          });
+          );
           break;
         case 'Policy':
-          await tx.policy.create({
-            data: {
-              hotelId,
-              topic: str(f.topic) ?? name!,
+          await this.upsertByKey(
+            tx.policy,
+            { hotelId, topic: str(f.topic) ?? name! },
+            {
               ruleText: str(f.ruleText) ?? '',
               exceptions: str(f.exceptions),
             },
-          });
+          );
           break;
         case 'LocalRecommendation':
-          await tx.localRecommendation.create({
-            data: {
-              hotelId,
-              name: name!,
+          await this.upsertByKey(
+            tx.localRecommendation,
+            { hotelId, name: name! },
+            {
               category: str(f.category),
               distanceNote: str(f.distanceNote),
               curationNote: str(f.curationNote),
             },
-          });
+          );
           break;
         case 'EventSpace':
-          await tx.eventSpace.create({
-            data: {
-              hotelId,
-              name: name!,
+          await this.upsertByKey(
+            tx.eventSpace,
+            { hotelId, name: name! },
+            {
               capacity: int(f.capacity),
               layoutOptions: strArr(f.layoutOptions),
               avEquipment: strArr(f.avEquipment),
               cateringMinimum: dec(f.cateringMinimum),
             },
-          });
+          );
           break;
         case 'Experience':
-          await tx.experience.create({
-            data: {
-              hotelId,
-              name: name!,
+          await this.upsertByKey(
+            tx.experience,
+            { hotelId, name: name! },
+            {
               category: str(f.category),
               durationMins: int(f.durationMins),
               price: dec(f.price),
               bookingLeadHrs: int(f.bookingLeadHrs),
               ageRestriction: str(f.ageRestriction),
             },
-          });
+          );
           break;
         case 'Package':
-          await tx.package.create({
-            data: {
-              hotelId,
-              name: name!,
+          await this.upsertByKey(
+            tx.package,
+            { hotelId, name: name! },
+            {
               includedItems: strArr(f.includedItems),
               priceLow: dec(f.priceLow),
               priceHigh: dec(f.priceHigh),
             },
-          });
+          );
           break;
         case 'PropertyProfile':
           // Singleton per hotel — upsert rather than duplicate.
