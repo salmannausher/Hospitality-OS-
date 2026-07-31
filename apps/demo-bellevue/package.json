@@ -3,11 +3,14 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "predev": "pnpm run sync-widget",
     "dev": "next dev --port 3002",
+    "prebuild": "pnpm run sync-widget",
     "build": "next build",
     "start": "next start --port 3002",
     "lint": "eslint",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "sync-widget": "pnpm --filter @hospitality/widget-embed build && mkdir -p public && cp ../../packages/widget-embed/dist/widget.js public/widget.js"
   },
   "dependencies": {
     "next": "16.2.10",

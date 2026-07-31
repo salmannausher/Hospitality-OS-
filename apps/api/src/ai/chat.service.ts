@@ -105,6 +105,18 @@ const HISTORY_TURNS = 10;
 const CERTAINTY_HEALTHY = 0.8;
 const CERTAINTY_DEGRADED = 0.3;
 
+/**
+ * Every `withTenant` call on this file's request path gets this same
+ * generous window (findings-log.md #33) — a live guest turn touches up to
+ * nine separate tenant-scoped transactions in sequence (history, retrieval,
+ * lead-prompt checks, message persistence, brand lookups...), and any single
+ * one hitting Prisma's tight defaults (2s to acquire, 5s to run) under real
+ * Supabase Supavisor pooler latency fails the whole turn. Not applied
+ * anywhere else in the app — this is specifically the path a live demo
+ * depends on end to end, not a blanket fix for slow queries in general.
+ */
+const TENANT_TX_OPTIONS = { maxWaitMs: 10_000, timeoutMs: 15_000 };
+
 /** ABS §6 honest fallback — used on the Low-confidence path, no generation call. */
 const LOW_CONFIDENCE_FALLBACK =
   "I don't have confirmed information about that just yet, but I'd be glad to connect you with our team, who can give you an accurate answer.";
@@ -149,37 +161,41 @@ export class ChatService {
 
   /** GET /v1/chat/bootstrap (API §2.4). One round trip to render the launcher. */
   async bootstrap(hotelId: string): Promise<BootstrapResponse> {
-    return this.prisma.withTenant(hotelId, async (tx) => {
-      const hotel = await tx.hotel.findFirstOrThrow({
-        include: { brandSettings: true },
-      });
-      const brand = hotel.brandSettings;
-      const tone = brand?.tonePreset ?? 'MODERN_LUXURY';
-      return {
-        hotel: {
-          name: hotel.name,
-          conciergeName: brand?.conciergeName ?? `${hotel.name} Concierge`,
-        },
-        brand: {
-          tonePreset: tone,
-          primaryColor: brand?.primaryColor ?? '#2F4A3C',
-          fontFamily: brand?.fontFamily ?? '',
-          logoUrl: brand?.logoUrl ?? '',
-        },
-        greeting:
-          brand?.greeting ??
-          `Welcome to ${hotel.name}. How may I help you today?`,
-        // No schema home yet for these two — sensible Sprint 1 defaults
-        // (a suggested-questions/quick-start config lands with the admin portal).
-        suggestedQuestions: [
-          'What time is breakfast?',
-          'Do you allow pets?',
-          'Which room is best for a couple?',
-        ],
-        quickStart: [],
-        launcherDelayMs: 6000,
-      };
-    });
+    return this.prisma.withTenant(
+      hotelId,
+      async (tx) => {
+        const hotel = await tx.hotel.findFirstOrThrow({
+          include: { brandSettings: true },
+        });
+        const brand = hotel.brandSettings;
+        const tone = brand?.tonePreset ?? 'MODERN_LUXURY';
+        return {
+          hotel: {
+            name: hotel.name,
+            conciergeName: brand?.conciergeName ?? `${hotel.name} Concierge`,
+          },
+          brand: {
+            tonePreset: tone,
+            primaryColor: brand?.primaryColor ?? '#2F4A3C',
+            fontFamily: brand?.fontFamily ?? '',
+            logoUrl: brand?.logoUrl ?? '',
+          },
+          greeting:
+            brand?.greeting ??
+            `Welcome to ${hotel.name}. How may I help you today?`,
+          // No schema home yet for these two — sensible Sprint 1 defaults
+          // (a suggested-questions/quick-start config lands with the admin portal).
+          suggestedQuestions: [
+            'What time is breakfast?',
+            'Do you allow pets?',
+            'Which room is best for a couple?',
+          ],
+          quickStart: [],
+          launcherDelayMs: 6000,
+        };
+      },
+      TENANT_TX_OPTIONS,
+    );
   }
 
   /**
@@ -213,8 +229,10 @@ export class ChatService {
     yield { type: 'ack', conversationId };
 
     // --- Turn open (short tx): ensure conversation, persist guest msg, read history.
-    const history = await this.prisma.withTenant(params.hotelId, async (tx) =>
-      this.openTurn(tx, { ...params, conversationId }),
+    const history = await this.prisma.withTenant(
+      params.hotelId,
+      async (tx) => this.openTurn(tx, { ...params, conversationId }),
+      TENANT_TX_OPTIONS,
     );
 
     // --- Classification (Architecture §4 step 2–4).
@@ -283,33 +301,37 @@ export class ChatService {
         const queryEmbedding = await this.embeddings.embedQuery(
           classification.rewrittenQuery || params.message,
         );
-        ranked = await this.prisma.withTenant(params.hotelId, async (tx) => {
-          const chunks = await this.retrieval.retrieve(tx, {
-            queryEmbedding,
-            domains: classification.domain,
-            limit: RETRIEVAL_LIMIT,
-          });
-          const now = new Date();
-          return [...chunks].sort(
-            (a, b) =>
-              rerankScore(
-                {
-                  similarity: b.similarity,
-                  priority: b.priority,
-                  lastVerifiedAt: b.lastVerifiedAt,
-                },
-                now,
-              ) -
-              rerankScore(
-                {
-                  similarity: a.similarity,
-                  priority: a.priority,
-                  lastVerifiedAt: a.lastVerifiedAt,
-                },
-                now,
-              ),
-          );
-        });
+        ranked = await this.prisma.withTenant(
+          params.hotelId,
+          async (tx) => {
+            const chunks = await this.retrieval.retrieve(tx, {
+              queryEmbedding,
+              domains: classification.domain,
+              limit: RETRIEVAL_LIMIT,
+            });
+            const now = new Date();
+            return [...chunks].sort(
+              (a, b) =>
+                rerankScore(
+                  {
+                    similarity: b.similarity,
+                    priority: b.priority,
+                    lastVerifiedAt: b.lastVerifiedAt,
+                  },
+                  now,
+                ) -
+                rerankScore(
+                  {
+                    similarity: a.similarity,
+                    priority: a.priority,
+                    lastVerifiedAt: a.lastVerifiedAt,
+                  },
+                  now,
+                ),
+            );
+          },
+          TENANT_TX_OPTIONS,
+        );
       } catch (err) {
         this.logger.warn(
           `Retrieval degraded: ${String((err as Error)?.message ?? err)}`,
@@ -322,7 +344,7 @@ export class ChatService {
       const similarities = ranked.map((c) => c.similarity);
       const score = confidenceScore({
         topSimilarity: similarities[0] ?? 0,
-        agreement: chunkAgreement(similarities),
+        agreement: chunkAgreement(similarities, ranked[0]?.isAtomic ?? false),
         classifierCertainty: degraded ? CERTAINTY_DEGRADED : CERTAINTY_HEALTHY,
       });
       band = confidenceBand(score);
@@ -454,6 +476,7 @@ export class ChatService {
           params.hotelId,
           (tx) =>
             tx.lead.findFirst({ where: { conversationId, deletedAt: null } }),
+          TENANT_TX_OPTIONS,
         );
         if (!alreadyAsked) {
           leadPromptFired = true;
@@ -483,17 +506,20 @@ export class ChatService {
     };
 
     // --- Persist concierge turn + log metadata (step 9).
-    const messageId = await this.prisma.withTenant(params.hotelId, async (tx) =>
-      this.persistConciergeTurn(tx, {
-        hotelId: params.hotelId,
-        conversationId,
-        content: answer,
-        journeyState: classification.journeyState,
-        domainTags: classification.domain,
-        band,
-        escalationTriggered: escalationReason !== null,
-        leadCaptureTriggered: leadPromptFired,
-      }),
+    const messageId = await this.prisma.withTenant(
+      params.hotelId,
+      async (tx) =>
+        this.persistConciergeTurn(tx, {
+          hotelId: params.hotelId,
+          conversationId,
+          content: answer,
+          journeyState: classification.journeyState,
+          domainTags: classification.domain,
+          band,
+          escalationTriggered: escalationReason !== null,
+          leadCaptureTriggered: leadPromptFired,
+        }),
+      TENANT_TX_OPTIONS,
     );
 
     yield {
@@ -544,10 +570,13 @@ export class ChatService {
    */
   private async resolveCtaUrl(hotelId: string, kind: CtaKind): Promise<string> {
     if (kind === 'request_assistance') return '';
-    const bookingEngineUrl = await this.prisma.withTenant(hotelId, (tx) =>
-      tx.brandSettings
-        .findUnique({ where: { hotelId } })
-        .then((b) => b?.bookingEngineUrl ?? null),
+    const bookingEngineUrl = await this.prisma.withTenant(
+      hotelId,
+      (tx) =>
+        tx.brandSettings
+          .findUnique({ where: { hotelId } })
+          .then((b) => b?.bookingEngineUrl ?? null),
+      TENANT_TX_OPTIONS,
     );
     return bookingEngineUrl ?? '';
   }
@@ -559,12 +588,15 @@ export class ChatService {
     hotelId: string,
     groupSize: number,
   ): Promise<boolean> {
-    const threshold = await this.prisma.withTenant(hotelId, (tx) =>
-      tx.brandSettings
-        .findUnique({ where: { hotelId } })
-        .then(
-          (b) => b?.groupInquiryThreshold ?? DEFAULT_GROUP_INQUIRY_THRESHOLD,
-        ),
+    const threshold = await this.prisma.withTenant(
+      hotelId,
+      (tx) =>
+        tx.brandSettings
+          .findUnique({ where: { hotelId } })
+          .then(
+            (b) => b?.groupInquiryThreshold ?? DEFAULT_GROUP_INQUIRY_THRESHOLD,
+          ),
+      TENANT_TX_OPTIONS,
     );
     return groupSize > threshold;
   }
@@ -681,6 +713,7 @@ export class ChatService {
             TONE_MAP.MODERN_LUXURY,
         };
       },
+      TENANT_TX_OPTIONS,
     );
 
     const retrievedContext = input.topChunks

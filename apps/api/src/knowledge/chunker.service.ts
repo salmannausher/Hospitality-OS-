@@ -15,6 +15,15 @@ export interface Chunk {
   content: string;
   tokenCount: number;
   priority: ChunkPriority;
+  /** True when this chunk contains a whole table segment kept atomic (never
+   * split, see the class comment) — findings-log.md #31: the confidence
+   * formula's "lone hit" distrust doesn't apply to these. */
+  isAtomic: boolean;
+}
+
+interface Segment {
+  text: string;
+  isTable: boolean;
 }
 
 /** ~4 chars per token is a good-enough estimate for budgeting (no tokenizer dep). */
@@ -34,38 +43,46 @@ export class ChunkerService {
     const segments = this.segment(text);
 
     // Greedily pack segments into chunks up to the token cap; never split a
-    // table segment; hard-split any single oversized non-table segment.
-    const packed: string[] = [];
+    // table segment; hard-split any single oversized non-table segment. A
+    // packed chunk is atomic if any segment feeding it was a whole table —
+    // that guarantees no other chunk holds a continuation of the same table.
+    const packed: { content: string; isAtomic: boolean }[] = [];
     let current = '';
+    let currentIsAtomic = false;
     const flush = () => {
-      if (current.trim()) packed.push(current.trim());
+      if (current.trim())
+        packed.push({ content: current.trim(), isAtomic: currentIsAtomic });
       current = '';
+      currentIsAtomic = false;
     };
 
     for (const seg of segments) {
-      if (seg.length > MAX_CHARS && !isTable(seg)) {
+      if (seg.text.length > MAX_CHARS && !seg.isTable) {
         flush();
-        for (const piece of hardSplit(seg)) packed.push(piece);
+        for (const piece of hardSplit(seg.text))
+          packed.push({ content: piece, isAtomic: false });
         continue;
       }
-      if (current.length + seg.length > MAX_CHARS) flush();
-      current = current ? `${current}\n\n${seg}` : seg;
+      if (current.length + seg.text.length > MAX_CHARS) flush();
+      current = current ? `${current}\n\n${seg.text}` : seg.text;
+      currentIsAtomic = currentIsAtomic || seg.isTable;
     }
     flush();
 
     // Add a small overlap: prepend the tail of the previous chunk.
-    const withOverlap = packed.map((content, i) => {
-      if (i === 0) return content;
-      const prev = packed[i - 1];
+    const withOverlap = packed.map((p, i) => {
+      if (i === 0) return p;
+      const prev = packed[i - 1].content;
       const overlap = prev.slice(-Math.floor(prev.length * OVERLAP_RATIO));
       const tail = overlap.slice(overlap.indexOf(' ') + 1); // start at a word boundary
-      return tail ? `…${tail}\n\n${content}` : content;
+      return { ...p, content: tail ? `…${tail}\n\n${p.content}` : p.content };
     });
 
-    return withOverlap.map((content) => ({
+    return withOverlap.map(({ content, isAtomic }) => ({
       content,
       tokenCount: Math.ceil(content.length / CHARS_PER_TOKEN),
       priority: this.priorityFor(content),
+      isAtomic,
     }));
   }
 
@@ -73,20 +90,20 @@ export class ChunkerService {
    * Break text into natural segments: table blocks stay whole; otherwise split
    * on blank lines, keeping each Markdown heading attached to the text under it.
    */
-  private segment(text: string): string[] {
+  private segment(text: string): Segment[] {
     const lines = text.replace(/\r\n/g, '\n').split('\n');
-    const segments: string[] = [];
+    const segments: Segment[] = [];
     let buf: string[] = [];
     let tableBuf: string[] = [];
 
     const flushBuf = () => {
       const joined = buf.join('\n').trim();
-      if (joined) segments.push(joined);
+      if (joined) segments.push({ text: joined, isTable: false });
       buf = [];
     };
     const flushTable = () => {
       if (tableBuf.length) {
-        segments.push(tableBuf.join('\n').trim());
+        segments.push({ text: tableBuf.join('\n').trim(), isTable: true });
         tableBuf = [];
       }
     };
@@ -119,10 +136,6 @@ export class ChunkerService {
     if (LOW_SIGNAL.test(content)) return 'LOW';
     return 'NORMAL';
   }
-}
-
-function isTable(segment: string): boolean {
-  return segment.split('\n').every((l) => l.includes('|'));
 }
 
 /** Hard-split an oversized prose segment on sentence boundaries within the cap. */

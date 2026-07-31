@@ -24,10 +24,12 @@ This is not a single-brand design system with a color palette chosen once. `Bran
 
 | Preset | Type pairing | Radius | Motion | Feel |
 |---|---|---|---|---|
-| Classic Luxury | Serif display (headings/concierge name) + clean sans (body) | Soft, minimal (8–12px) | Slow, deliberate (300–400ms) | Rosewood, Waldorf Astoria |
+| Classic Luxury | Serif display (headings/concierge name) + clean sans (body) | Soft, minimal (8–12px)¹ | Slow, deliberate (300–400ms) | Rosewood, Waldorf Astoria |
 | Modern Luxury | Refined sans throughout, generous letter-spacing on display text | Soft (8–12px) | Standard (200–300ms) | EDITION, Proper Hotels |
 | Boutique | Warmer sans, slightly more character | Rounded (12–16px) | Standard, a touch more playful easing | Graduate Hotels |
 | Family-Friendly | Rounded sans, friendly but not childish | Rounded (12–16px) | Standard | Family resorts |
+
+¹ The radius value is a per-preset *default*, per this section's own override mechanism — Bellevue (`docs/18`'s "Quiet Constant" direction, Cormorant Garamond + Work Sans under Classic Luxury) deliberately overrides it to sharp, architectural corners. Not drift; see [findings-log.md #25](findings-log.md).
 
 No preset uses a "chat app" visual language (bright bubbles, cartoon avatars, gradient backgrounds) — that's the one thing held constant across all four, because it's the thing [UX §1](05-user-experience-flows.md) identified as the fastest way to read as software instead of hospitality.
 

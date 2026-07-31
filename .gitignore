@@ -31,3 +31,7 @@ apps/api/prisma/migrations/**/migration_lock.toml.bak
 
 # Testing
 coverage/
+
+# Build artifact synced in by apps/demo-bellevue's predev/prebuild (sync-widget
+# script) from packages/widget-embed/dist — never hand-edited, never committed.
+apps/demo-bellevue/public/widget.js

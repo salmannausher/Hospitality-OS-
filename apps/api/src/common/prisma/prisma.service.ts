@@ -60,16 +60,31 @@ export class PrismaService
   async withTenant<T>(
     hotelId: string,
     fn: (tx: Prisma.TransactionClient) => Promise<T>,
+    options?: { timeoutMs?: number; maxWaitMs?: number },
   ): Promise<T> {
-    return this.$transaction(async (tx) => {
-      await tx.$executeRaw`SELECT set_config('app.hotel_id', ${hotelId}, true)`;
-      // Guarantee the pgvector type/operators resolve for this transaction even
-      // on a reused pooler connection (see migration 4_app_role_pgvector_access).
-      await tx.$executeRawUnsafe(
-        'SET LOCAL search_path TO "$user", public, extensions',
-      );
-      return fn(tx);
-    });
+    return this.$transaction(
+      async (tx) => {
+        await tx.$executeRaw`SELECT set_config('app.hotel_id', ${hotelId}, true)`;
+        // Guarantee the pgvector type/operators resolve for this transaction even
+        // on a reused pooler connection (see migration 4_app_role_pgvector_access).
+        await tx.$executeRawUnsafe(
+          'SET LOCAL search_path TO "$user", public, extensions',
+        );
+        return fn(tx);
+      },
+      // Default (Prisma's own — `timeout`: 5s to run, `maxWait`: 2s to even
+      // acquire a connection) stays the norm for every ordinary caller. Only
+      // opt a specific call into a longer window when it genuinely needs one:
+      // either more real work than the default assumes (findings-log.md #32:
+      // IngestionService's find-then-update-or-create entity writes), or —
+      // `maxWait` specifically — a call on a path that's shown it can hit real
+      // Supabase Supavisor connection-acquisition latency under live use
+      // (findings-log.md #33: the live chat pipeline, not something to raise
+      // globally just to paper over a slow query elsewhere).
+      options?.timeoutMs || options?.maxWaitMs
+        ? { timeout: options.timeoutMs, maxWait: options.maxWaitMs }
+        : undefined,
+    );
   }
 
   /**

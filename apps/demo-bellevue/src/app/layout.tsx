@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 import { Cormorant_Garamond, Work_Sans } from "next/font/google";
+import Script from "next/script";
 import { Header } from "@/components/Header";
 import { Footer } from "@/components/Footer";
-import { ConciergeWidget } from "@/components/ConciergeWidget";
 import "./globals.css";
 
 const cormorant = Cormorant_Garamond({
@@ -39,7 +39,10 @@ export default function RootLayout({
         <Header />
         <main>{children}</main>
         <Footer />
-        <ConciergeWidget />
+        {/* Sprint 5 ticket 5 (docs/06-system-architecture.md §3): the real
+            embeddable widget script, not a React component — the exact
+            integration path a genuine hotel client site would use. */}
+        <Script src="/widget.js" data-widget-key="wk_demo_bellevue" strategy="afterInteractive" />
       </body>
     </html>
   );

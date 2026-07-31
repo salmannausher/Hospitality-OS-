@@ -43,6 +43,7 @@ export class RetrievalService {
               c."content",
               c."priority",
               c."domainTags",
+              c."isAtomic",
               c."lastVerifiedAt",
               1 - (c."embedding" <=> ${vectorLiteral}::vector) AS "similarity"
             FROM "Chunk" c
@@ -59,6 +60,7 @@ export class RetrievalService {
               c."content",
               c."priority",
               c."domainTags",
+              c."isAtomic",
               c."lastVerifiedAt",
               1 - (c."embedding" <=> ${vectorLiteral}::vector) AS "similarity"
             FROM "Chunk" c
@@ -74,6 +76,7 @@ export class RetrievalService {
       content: r.content,
       priority: r.priority,
       domainTags: r.domainTags,
+      isAtomic: r.isAtomic,
       lastVerifiedAt: r.lastVerifiedAt,
       similarity: Number(r.similarity),
     }));
@@ -85,6 +88,7 @@ interface RetrievedChunkRow {
   content: string;
   priority: ChunkPriority;
   domainTags: string[];
+  isAtomic: boolean;
   lastVerifiedAt: Date;
   similarity: number;
 }
@@ -94,6 +98,10 @@ export interface RetrievedChunk {
   content: string;
   priority: ChunkPriority;
   domainTags: string[];
+  /** A whole table ChunkerService deliberately never splits (IA §6) — standing
+   * alone as the sole retrieved chunk is by-design for these, not a red flag
+   * (findings-log.md #31, scoring.ts's chunkAgreement). */
+  isAtomic: boolean;
   lastVerifiedAt: Date;
   similarity: number;
 }
