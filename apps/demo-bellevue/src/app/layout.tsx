@@ -42,7 +42,15 @@ export default function RootLayout({
         {/* Sprint 5 ticket 5 (docs/06-system-architecture.md §3): the real
             embeddable widget script, not a React component — the exact
             integration path a genuine hotel client site would use. */}
-        <Script src="/widget.js" data-widget-key="wk_demo_bellevue" strategy="afterInteractive" />
+        {/* The embed is a self-mounting IIFE, so Fast Refresh cannot update an
+            instance already running in the page. Bump this version whenever
+            public/widget.js changes to prevent a stale cached bundle from
+            surviving a rebuild (findings-log.md #35). */}
+        <Script
+          src="/widget.js?v=20260801-geometry-35"
+          data-widget-key="wk_demo_bellevue"
+          strategy="afterInteractive"
+        />
       </body>
     </html>
   );

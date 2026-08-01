@@ -319,4 +319,24 @@ The actual fix is a fourth option, synthesized from why (b) and (c) are each hal
 
 ---
 
-**Next entry number: 34.**
+### 34. Widget panel geometry changes with conversation content, causing center/right/left jumps — FIXED
+
+**Found:** 2026-08-01, from the four-state live screenshots of the Bellevue embed (launcher, initial open, composing, and completed answer), then reproduced against the running `/dining` page with direct bounding-box measurements.
+**Problem:** The desktop panel does not keep a stable size or bottom-right position. It opens toward the center, shrinks and returns to the right while the concierge is composing, then can jump to the far left when a longer answer arrives. Its height also changes on every phase because only a maximum height is defined.
+**Root cause:** The fixed embed wrapper has `right: 16px` but no explicit width. `WidgetShell` then asks for `width: min(24rem, 100%)`; that percentage is resolved against the auto-sized fixed wrapper, whose shrink-to-fit/intrinsic width changes with its current descendants. The shell is placed at the wrapper's left edge, so a wide quick-start state creates unused space to its right, a short composing state produces a narrow wrapper, and a long answer can make the wrapper span nearly the viewport and put the 24rem shell at `x = 0`. Separately, `WidgetShell` declares only `maxHeight: min(70vh, 640px)`, so its actual height remains content-driven. Live reproduction at a 1280px viewport measured the 384px shell at `x = 576.47` inside a 687.53px wrapper even though the wrapper's right edge was correctly pinned 16px from the viewport.
+**Fix chosen — and why:** The desktop wrapper now owns the same bounded width as the panel (`min(24rem, calc(100vw - 32px))`) and uses a right-aligned flex layout, so both the launcher and panel stay attached to the wrapper's fixed right edge. The non-mobile shell now has `height: min(70vh, 640px)` instead of only a `maxHeight`, so its message area scrolls while the outer geometry remains unchanged. This keeps the existing 24rem × up-to-640px design, preserves the documented mobile full-screen takeover, and removes conversation content from both geometry calculations.
+**Verification:** `pnpm typecheck` passes for all 9 typed workspace projects and `pnpm --filter @hospitality/widget-embed build` succeeds. The rebuilt embed was synced into the running Bellevue demo and measured live at a 1280×720 viewport: initial open, composing, and completed long-answer states all remained exactly `x=880, y=200, width=384, height=504`, with the launcher right-aligned inside the same `x=880, width=384` wrapper. At a 390×844 mobile viewport, the open wrapper and shell both remained the documented full-screen `x=0, y=0, width=390, height=844`. No browser console warnings or errors.
+
+---
+
+### 35. Bellevue demo can keep executing a stale widget bundle after the source bundle is rebuilt — FIXED
+
+**Found:** 2026-08-01, when the user still saw finding #34's exact center/left geometry after the corrected bundle had been built, copied into `apps/demo-bellevue/public/widget.js`, and independently verified live at stable bottom-right coordinates.
+**Problem:** The demo loads the embed from the permanent `/widget.js` URL. Rebuilding and replacing that public file does not change the resource identity, so an already-open browser page, Next root layout, or browser cache can continue running the previously-loaded IIFE. Source/HMR changes cannot patch an IIFE that already mounted itself into `document.body`.
+**Root cause:** `apps/demo-bellevue/src/app/layout.tsx` uses `<Script src="/widget.js" ...>`, with no bundle-version query or content-hashed filename. The build also writes to a stable `dist/widget.js` filename. There is therefore no cache/in-memory invalidation signal when only the embed output changes.
+**Fix chosen — and why:** Versioned the Bellevue demo's script URL as `/widget.js?v=20260801-geometry-35`, so the browser must request and execute the corrected bundle as a new resource. The layout comment explicitly requires bumping the version when `public/widget.js` changes. A query version is the smallest change compatible with the current single-file embed build; introducing a hashed-asset deployment pipeline would be disproportionate for the local demo.
+**Verification:** A fresh `/dining` load confirmed the DOM script source is the versioned URL, not `/widget.js`. At a 1280×720 viewport the launcher wrapper loaded at `x=880, width=384`; initial open, composing, streaming-answer, and completed-answer states all remained exactly `x=880, y=200, width=384, height=504`. The completed response restored the input to enabled and produced no browser console warnings or errors.
+
+---
+
+**Next entry number: 36.**
