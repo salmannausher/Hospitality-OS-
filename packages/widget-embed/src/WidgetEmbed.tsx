@@ -61,6 +61,7 @@ type Turn =
     };
 
 const MOBILE_QUERY = "(max-width: 767px)";
+const DESKTOP_PANEL_WIDTH = "min(24rem, calc(100vw - 32px))";
 
 /** A host page has no module to import a React setter from — this is the one
  * integration point a plain `<script>`-embedded widget can offer for "open me
@@ -288,7 +289,15 @@ export function WidgetEmbed({ widgetKey }: { widgetKey: string }) {
   // pinned to the viewport corner.
   const wrapperStyle: CSSProperties = isMobile
     ? { position: "fixed", inset: open ? "0px" : "auto", right: open ? "0px" : "16px", bottom: open ? "0px" : "16px", zIndex: 2147483000 }
-    : { position: "fixed", right: "16px", bottom: "16px", zIndex: 2147483000 };
+    : {
+        position: "fixed",
+        right: "16px",
+        bottom: "16px",
+        width: DESKTOP_PANEL_WIDTH,
+        display: "flex",
+        justifyContent: "flex-end",
+        zIndex: 2147483000,
+      };
 
   return (
     <div style={wrapperStyle}>

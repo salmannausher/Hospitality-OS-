@@ -68,7 +68,7 @@ export function WidgetShell({
         display: "flex",
         flexDirection: "column",
         width: "min(24rem, 100%)",
-        maxHeight: "min(70vh, 640px)",
+        height: "min(70vh, 640px)",
         borderRadius: "var(--radius-lg)",
         border: "1px solid var(--neutral-300)",
         boxShadow: "var(--shadow-lifted)",
