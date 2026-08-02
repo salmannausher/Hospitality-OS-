@@ -150,6 +150,14 @@ export const AlertIcon = base(
 
 export const CheckIcon = base(<path d="M4 12l5 5L20 6" />);
 
+export const SmileIcon = base(
+  <>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M8.5 14.5c1 1.2 2.2 1.8 3.5 1.8s2.5-.6 3.5-1.8" />
+    <path d="M8.5 9.5h.01M15.5 9.5h.01" />
+  </>,
+);
+
 export const SearchIcon = base(
   <>
     <circle cx="11" cy="11" r="7" />

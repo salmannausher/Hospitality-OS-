@@ -32,8 +32,19 @@ import {
   type DailyMetricRow,
   type TopicDistributionRow,
 } from "@hospitality/sdk";
-import { ArrowRightIcon, BellIcon, BookIcon, ChartIcon } from "../icons";
+import {
+  AlertIcon,
+  ArrowRightIcon,
+  BellIcon,
+  BookIcon,
+  ChartIcon,
+  CheckIcon,
+  ChatIcon,
+  LeadsIcon,
+  SmileIcon,
+} from "../icons";
 import { domainLabel } from "../domain-labels";
+import type { ComponentType } from "react";
 
 function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
@@ -53,6 +64,8 @@ function relativeTime(iso: string): string {
 interface Tile {
   label: string;
   value: string;
+  icon: ComponentType<{ className?: string }>;
+  alert?: boolean;
 }
 
 function buildTiles(row: DailyMetricRow | null): Tile[] {
@@ -67,16 +80,18 @@ function buildTiles(row: DailyMetricRow | null): Tile[] {
       : null;
 
   return [
-    { label: "Chats Today", value: String(conversations) },
-    { label: "Qualified Leads", value: String(row?.leadCount ?? 0) },
-    { label: "Escalations", value: String(escalations) },
+    { label: "Chats Today", value: String(conversations), icon: ChatIcon },
+    { label: "Qualified Leads", value: String(row?.leadCount ?? 0), icon: LeadsIcon },
+    { label: "Escalations", value: String(escalations), icon: AlertIcon, alert: escalations > 0 },
     {
       label: "Answered w/o Handoff",
       value: answeredWithoutHandoffPct === null ? "—" : `${answeredWithoutHandoffPct}%`,
+      icon: CheckIcon,
     },
     {
       label: "Guest Satisfaction",
       value: row?.avgSatisfaction != null ? row.avgSatisfaction.toFixed(1) : "No data yet",
+      icon: SmileIcon,
     },
   ];
 }
@@ -142,10 +157,18 @@ export default function AdminDashboardPage() {
           {buildTiles(row).map((tile) => (
             <div
               key={tile.label}
-              className="rounded-xl border border-line bg-white p-5 transition-colors hover:border-brass/50"
+              className={`relative overflow-hidden rounded-xl border bg-white p-5 transition-colors ${
+                tile.alert ? "border-red-200" : "border-line hover:border-brass/50"
+              }`}
             >
-              <p className="mb-2 text-sm text-ink-soft">{tile.label}</p>
-              <p className="font-display text-3xl text-ink">{tile.value}</p>
+              {tile.alert && (
+                <div className="pointer-events-none absolute top-0 right-0 h-16 w-16 rounded-bl-full bg-red-50" />
+              )}
+              <div className="relative z-10 mb-2 flex items-start justify-between">
+                <p className="text-sm text-ink-soft">{tile.label}</p>
+                <tile.icon className={`h-5 w-5 ${tile.alert ? "text-red-500" : "text-brass/70"}`} />
+              </div>
+              <p className="relative z-10 font-display text-3xl text-ink">{tile.value}</p>
             </div>
           ))}
         </section>
