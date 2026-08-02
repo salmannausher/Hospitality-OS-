@@ -1,13 +1,16 @@
 "use client";
 
 // Admin Flow — Brand Settings (API §3.5, UI Design System §9/§10), Sprint 4
-// ticket 4. Bare/unstyled, matching the rest of the protected shell (no
-// design system yet, Sprint 5 decision pending). The live preview renders
-// the same 5 fields the real guest widget's bootstrap() call actually reads
-// (conciergeName, greeting, primaryColor, fontFamily, logoUrl — see
+// ticket 4. Visual design ported from the Stitch "Brand Settings" mockup
+// (Admin Dashboard redesign). The live preview renders the same 5 fields the
+// real guest widget's bootstrap() call actually reads (conciergeName,
+// greeting, primaryColor, fontFamily, logoUrl — see
 // apps/web/src/app/widget/page.tsx) using the form's UNSAVED state, so it's
 // an honest "what guests will actually see" preview, not a mockup of a
-// Sprint-5 design that doesn't exist yet.
+// Sprint-5 design that doesn't exist yet — the fixed ivory/ink/brass shell
+// tokens below style the surrounding admin chrome only; the preview card
+// itself uses the hotel's own configured font/color, exactly as it will
+// render for a real guest.
 //
 // formalityNote/emojiAllowed/signOff/secondaryColor are editable here but
 // not yet consumed by any guest-facing behavior (findings-log.md #18) — the
@@ -31,6 +34,11 @@ const TONE_PRESETS: BrandSettingsResponse["tonePreset"][] = [
   "FAMILY_FRIENDLY",
 ];
 
+const inputClass =
+  "w-full rounded-lg border border-line bg-white px-3 py-2 text-sm text-ink placeholder:text-mist focus:border-brass focus:ring-1 focus:ring-brass focus:outline-none";
+const labelClass = "mb-1.5 block text-xs font-semibold tracking-wide text-ink-soft uppercase";
+const notYetUsedClass = "ml-2 rounded-full bg-parchment px-2 py-0.5 text-[10px] text-mist normal-case";
+
 function toFormState(brand: BrandSettingsResponse): UpdateBrandSettingsRequest {
   return {
     conciergeName: brand.conciergeName,
@@ -51,8 +59,7 @@ function toFormState(brand: BrandSettingsResponse): UpdateBrandSettingsRequest {
 /** Empty-string form fields mean "unset" for nullable columns — convert back
  * to `null` before sending, so clearing a field actually clears it. */
 function toRequestBody(form: UpdateBrandSettingsRequest): UpdateBrandSettingsRequest {
-  const nullableIfEmpty = (v: string | undefined | null) =>
-    v === "" ? null : v;
+  const nullableIfEmpty = (v: string | undefined | null) => (v === "" ? null : v);
   return {
     ...form,
     formalityNote: nullableIfEmpty(form.formalityNote),
@@ -65,43 +72,79 @@ function toRequestBody(form: UpdateBrandSettingsRequest): UpdateBrandSettingsReq
   };
 }
 
+function ColorField({
+  label,
+  value,
+  onChange,
+  hint,
+}: {
+  label: string;
+  value: string | null | undefined;
+  onChange: (v: string) => void;
+  hint?: string;
+}) {
+  return (
+    <label>
+      <span className={labelClass}>
+        {label}
+        {hint && <span className={notYetUsedClass}>{hint}</span>}
+      </span>
+      <div className="flex items-center gap-2">
+        <input
+          type="color"
+          value={value || "#2F4A3C"}
+          onChange={(e) => onChange(e.target.value.toUpperCase())}
+          className="h-9 w-9 shrink-0 cursor-pointer rounded-md border border-line bg-white p-1"
+        />
+        <input
+          type="text"
+          placeholder="#2F4A3C"
+          value={value ?? ""}
+          onChange={(e) => onChange(e.target.value)}
+          className={`${inputClass} font-mono`}
+        />
+      </div>
+    </label>
+  );
+}
+
 function WidgetPreview({ form }: { form: UpdateBrandSettingsRequest }) {
   const accent = form.primaryColor || "#2F4A3C";
   return (
-    <section
-      style={{
-        border: "1px solid #ddd",
-        borderRadius: 8,
-        padding: "1rem",
-        maxWidth: 360,
-        fontFamily: form.fontFamily || "system-ui, sans-serif",
-      }}
+    <div
+      className="w-full max-w-xs overflow-hidden rounded-2xl border border-line bg-white shadow-sm"
+      style={{ fontFamily: form.fontFamily || undefined }}
     >
-      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        {form.logoUrl && (
-          // eslint-disable-next-line @next/next/no-img-element -- admin-provided arbitrary URL, live preview only
-          <img src={form.logoUrl} alt="" style={{ height: 24, width: 24, objectFit: "contain" }} />
-        )}
-        <strong style={{ color: accent }}>{form.conciergeName || "Concierge"}</strong>
+      <div className="flex items-center justify-between px-4 py-3" style={{ backgroundColor: accent }}>
+        <div className="flex items-center gap-2">
+          {form.logoUrl && (
+            // eslint-disable-next-line @next/next/no-img-element -- admin-provided arbitrary URL, live preview only
+            <img src={form.logoUrl} alt="" className="h-5 w-5 rounded-full bg-white/20 object-contain" />
+          )}
+          <span className="text-sm font-semibold text-white">{form.conciergeName || "Concierge"}</span>
+        </div>
+        <span className="text-white/70">×</span>
       </div>
-      <p style={{ marginTop: 8 }}>{form.greeting || "Welcome! How may I help you today?"}</p>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
-        {["What time is breakfast?", "Do you allow pets?"].map((q) => (
-          <span
-            key={q}
-            style={{
-              fontSize: "0.8rem",
-              padding: "4px 8px",
-              border: `1px solid ${accent}`,
-              borderRadius: 999,
-              color: accent,
-            }}
-          >
-            {q}
-          </span>
-        ))}
+      <div className="space-y-3 bg-parchment/20 p-4">
+        <div className="max-w-[85%] rounded-xl rounded-tl-sm bg-white p-3 text-sm text-ink shadow-sm">
+          {form.greeting || "Welcome! How may I help you today?"}
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {["What time is breakfast?", "Do you allow pets?"].map((q) => (
+            <span
+              key={q}
+              className="rounded-full border px-3 py-1.5 text-xs"
+              style={{ borderColor: accent, color: accent }}
+            >
+              {q}
+            </span>
+          ))}
+        </div>
       </div>
-    </section>
+      <div className="border-t border-line px-4 py-2 text-center text-[10px] tracking-wide text-mist uppercase">
+        Powered by AI OS
+      </div>
+    </div>
   );
 }
 
@@ -164,158 +207,184 @@ export default function BrandSettingsPage() {
 
   if (!form) {
     return (
-      <div>
-        <h1 style={{ fontSize: "1.2rem", marginBottom: "1rem" }}>Brand Settings</h1>
-        {error ? <p style={{ color: "crimson" }}>{error}</p> : <p>Loading…</p>}
+      <div className="max-w-md">
+        <h1 className="font-display text-3xl text-ink">Brand Settings</h1>
+        {error ? (
+          <p className="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {error}
+          </p>
+        ) : (
+          <p className="mt-4 text-sm text-ink-soft">Loading…</p>
+        )}
       </div>
     );
   }
 
   return (
-    <div>
-      <h1 style={{ fontSize: "1.2rem", marginBottom: "1rem" }}>Brand Settings</h1>
-      <p style={{ color: "#999", fontSize: "0.85rem", marginBottom: "1rem" }}>
-        {savedAt ? `Last saved ${new Date(savedAt).toLocaleString()}` : "Not yet saved — showing defaults."}
-      </p>
+    <div className="flex max-w-6xl flex-col gap-6">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h1 className="font-display text-3xl text-ink">Brand Settings</h1>
+        <p className="text-xs text-mist">
+          {savedAt ? `Last saved ${new Date(savedAt).toLocaleString()}` : "Not yet saved — showing defaults."}
+        </p>
+      </div>
 
-      <div style={{ display: "flex", gap: "2rem", flexWrap: "wrap" }}>
-        <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem", minWidth: 280 }}>
-          <label>
-            Concierge name
-            <input
-              type="text"
-              value={form.conciergeName ?? ""}
-              onChange={(e) => update("conciergeName", e.target.value)}
-              style={{ display: "block", width: "100%" }}
-            />
-          </label>
-          <label>
-            Greeting
-            <input
-              type="text"
-              value={form.greeting ?? ""}
-              onChange={(e) => update("greeting", e.target.value)}
-              style={{ display: "block", width: "100%" }}
-            />
-          </label>
-          <label>
-            Tone preset
-            <select
-              value={form.tonePreset}
-              onChange={(e) => update("tonePreset", e.target.value as UpdateBrandSettingsRequest["tonePreset"])}
-              style={{ display: "block" }}
-            >
-              {TONE_PRESETS.map((t) => (
-                <option key={t} value={t}>
-                  {t}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Logo URL
-            <input
-              type="text"
-              value={form.logoUrl ?? ""}
-              onChange={(e) => update("logoUrl", e.target.value)}
-              style={{ display: "block", width: "100%" }}
-            />
-          </label>
-          <label>
-            Font family
-            <input
-              type="text"
-              placeholder="system-ui, sans-serif"
-              value={form.fontFamily ?? ""}
-              onChange={(e) => update("fontFamily", e.target.value)}
-              style={{ display: "block", width: "100%" }}
-            />
-          </label>
-          <label>
-            Primary color
-            <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-              <input
-                type="color"
-                value={form.primaryColor || "#2F4A3C"}
-                onChange={(e) => update("primaryColor", e.target.value.toUpperCase())}
-              />
+      <section className="grid grid-cols-1 gap-8 lg:grid-cols-12">
+        <div className="flex flex-col gap-6 lg:col-span-7">
+          <div className="rounded-xl border border-line bg-white p-6">
+            <h2 className="mb-4 text-xs font-semibold tracking-widest text-ink-soft uppercase">
+              Identity
+            </h2>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <label>
+                <span className={labelClass}>Concierge Name</span>
+                <input
+                  type="text"
+                  value={form.conciergeName ?? ""}
+                  onChange={(e) => update("conciergeName", e.target.value)}
+                  className={inputClass}
+                />
+              </label>
+              <label>
+                <span className={labelClass}>Tone Preset</span>
+                <select
+                  value={form.tonePreset}
+                  onChange={(e) =>
+                    update("tonePreset", e.target.value as UpdateBrandSettingsRequest["tonePreset"])
+                  }
+                  className={inputClass}
+                >
+                  {TONE_PRESETS.map((t) => (
+                    <option key={t} value={t}>
+                      {t}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            <label className="mt-4 block">
+              <span className={labelClass}>Greeting</span>
               <input
                 type="text"
-                placeholder="#2F4A3C"
-                value={form.primaryColor ?? ""}
-                onChange={(e) => update("primaryColor", e.target.value)}
-                style={{ width: 120 }}
+                value={form.greeting ?? ""}
+                onChange={(e) => update("greeting", e.target.value)}
+                className={inputClass}
               />
-            </div>
-          </label>
-          <label>
-            Secondary color{" "}
-            <span style={{ color: "#999", fontSize: "0.75rem" }}>(not yet used anywhere guest-facing)</span>
-            <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-              <input
-                type="color"
-                value={form.secondaryColor || "#2F4A3C"}
-                onChange={(e) => update("secondaryColor", e.target.value.toUpperCase())}
-              />
+            </label>
+            <label className="mt-4 block">
+              <span className={labelClass}>Logo URL</span>
               <input
                 type="text"
-                placeholder="#2F4A3C"
-                value={form.secondaryColor ?? ""}
-                onChange={(e) => update("secondaryColor", e.target.value)}
-                style={{ width: 120 }}
+                value={form.logoUrl ?? ""}
+                onChange={(e) => update("logoUrl", e.target.value)}
+                className={inputClass}
+              />
+            </label>
+          </div>
+
+          <div className="rounded-xl border border-line bg-white p-6">
+            <h2 className="mb-4 text-xs font-semibold tracking-widest text-ink-soft uppercase">
+              Typography &amp; Color
+            </h2>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <label>
+                <span className={labelClass}>Font Family</span>
+                <input
+                  type="text"
+                  placeholder="system-ui, sans-serif"
+                  value={form.fontFamily ?? ""}
+                  onChange={(e) => update("fontFamily", e.target.value)}
+                  className={inputClass}
+                />
+              </label>
+              <ColorField
+                label="Primary Color"
+                value={form.primaryColor}
+                onChange={(v) => update("primaryColor", v)}
+              />
+              <ColorField
+                label="Secondary Color"
+                value={form.secondaryColor}
+                onChange={(v) => update("secondaryColor", v)}
+                hint="not yet used"
               />
             </div>
-          </label>
-          <label>
-            Booking engine URL
-            <input
-              type="text"
-              value={form.bookingEngineUrl ?? ""}
-              onChange={(e) => update("bookingEngineUrl", e.target.value)}
-              style={{ display: "block", width: "100%" }}
-            />
-          </label>
-          <label>
-            Group inquiry threshold
-            <input
-              type="number"
-              min={1}
-              value={form.groupInquiryThreshold ?? 15}
-              onChange={(e) => update("groupInquiryThreshold", Number(e.target.value))}
-              style={{ display: "block", width: 100 }}
-            />
-          </label>
-          <label>
-            Formality note <span style={{ color: "#999", fontSize: "0.75rem" }}>(not yet used anywhere guest-facing)</span>
-            <input
-              type="text"
-              value={form.formalityNote ?? ""}
-              onChange={(e) => update("formalityNote", e.target.value)}
-              style={{ display: "block", width: "100%" }}
-            />
-          </label>
-          <label>
-            Sign-off <span style={{ color: "#999", fontSize: "0.75rem" }}>(not yet used anywhere guest-facing)</span>
-            <input
-              type="text"
-              value={form.signOff ?? ""}
-              onChange={(e) => update("signOff", e.target.value)}
-              style={{ display: "block", width: "100%" }}
-            />
-          </label>
-          <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <input
-              type="checkbox"
-              checked={form.emojiAllowed ?? false}
-              onChange={(e) => update("emojiAllowed", e.target.checked)}
-            />
-            Emoji allowed <span style={{ color: "#999", fontSize: "0.75rem" }}>(not yet used anywhere guest-facing)</span>
-          </label>
+          </div>
+
+          <div className="rounded-xl border border-line bg-white p-6">
+            <h2 className="mb-4 text-xs font-semibold tracking-widest text-ink-soft uppercase">
+              System &amp; Logic
+            </h2>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <label className="sm:col-span-2">
+                <span className={labelClass}>Booking Engine URL</span>
+                <input
+                  type="text"
+                  value={form.bookingEngineUrl ?? ""}
+                  onChange={(e) => update("bookingEngineUrl", e.target.value)}
+                  className={inputClass}
+                />
+              </label>
+              <label>
+                <span className={labelClass}>Group Inquiry Threshold</span>
+                <input
+                  type="number"
+                  min={1}
+                  value={form.groupInquiryThreshold ?? 15}
+                  onChange={(e) => update("groupInquiryThreshold", Number(e.target.value))}
+                  className={`${inputClass} w-28`}
+                />
+              </label>
+              <label className="flex items-center gap-3 self-end pb-2">
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={form.emojiAllowed ?? false}
+                  onClick={() => update("emojiAllowed", !(form.emojiAllowed ?? false))}
+                  className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${
+                    form.emojiAllowed ? "bg-brass" : "bg-line"
+                  }`}
+                >
+                  <span
+                    className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${
+                      form.emojiAllowed ? "translate-x-5" : "translate-x-0.5"
+                    }`}
+                  />
+                </button>
+                <span className="text-sm text-ink-soft">
+                  Emojis Allowed<span className={notYetUsedClass}>not yet used</span>
+                </span>
+              </label>
+            </div>
+
+            <label className="mt-4 block">
+              <span className={labelClass}>
+                Formality Note<span className={notYetUsedClass}>not yet used</span>
+              </span>
+              <input
+                type="text"
+                value={form.formalityNote ?? ""}
+                onChange={(e) => update("formalityNote", e.target.value)}
+                className={inputClass}
+              />
+            </label>
+            <label className="mt-4 block">
+              <span className={labelClass}>
+                Sign-off<span className={notYetUsedClass}>not yet used</span>
+              </span>
+              <input
+                type="text"
+                value={form.signOff ?? ""}
+                onChange={(e) => update("signOff", e.target.value)}
+                className={inputClass}
+              />
+            </label>
+          </div>
 
           {contrastFailures.length > 0 && (
-            <div style={{ color: "#9a6700", fontSize: "0.85rem" }}>
-              <p style={{ fontWeight: 600 }}>Contrast check failed:</p>
-              <ul style={{ margin: 0, paddingLeft: "1.25rem" }}>
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+              <p className="mb-1 font-semibold">Contrast check failed:</p>
+              <ul className="list-disc pl-5">
                 {contrastFailures.map((f) => (
                   <li key={f.field}>
                     {f.field} ({f.color}) vs. {f.against}: {f.ratio}:1, needs {f.required}:1
@@ -324,18 +393,35 @@ export default function BrandSettingsPage() {
               </ul>
             </div>
           )}
-          {error && contrastFailures.length === 0 && <p style={{ color: "crimson" }}>{error}</p>}
+          {error && contrastFailures.length === 0 && (
+            <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+              {error}
+            </p>
+          )}
 
-          <button onClick={() => void handleSave()} disabled={saving} style={{ alignSelf: "flex-start" }}>
-            Save
+          <button
+            onClick={() => void handleSave()}
+            disabled={saving}
+            className="self-start rounded-lg bg-ink px-6 py-2.5 text-sm font-medium text-ivory transition-colors hover:bg-ink/90 disabled:opacity-50"
+          >
+            {saving ? "Saving…" : "Save"}
           </button>
         </div>
 
-        <div>
-          <p style={{ fontWeight: 600, marginBottom: "0.5rem" }}>Live preview</p>
-          <WidgetPreview form={form} />
+        <div className="flex flex-col gap-3 lg:col-span-5">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold tracking-widest text-ink-soft uppercase">
+              Live Preview
+            </span>
+            <span className="text-xs font-semibold tracking-widest text-brass uppercase">
+              Guest View
+            </span>
+          </div>
+          <div className="flex justify-center rounded-xl border border-line bg-parchment/20 p-6">
+            <WidgetPreview form={form} />
+          </div>
         </div>
-      </div>
+      </section>
     </div>
   );
 }

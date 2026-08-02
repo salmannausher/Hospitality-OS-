@@ -1,11 +1,14 @@
 "use client";
 
-// Admin Flow — Conversation Review (UX §11), Sprint 4 ticket 2. Bare/unstyled,
-// matching the rest of the protected shell (no design system yet, Sprint 5
-// decision pending) — same table+expandable-row convention as the Knowledge
-// Base page: the list row is the triage view, expanding it reveals the full
-// thread, the ABS §15 QA rubric form, and the Playbook §7 "flag for
-// playbook" action.
+// Admin Flow — Conversation Review (UX §11), Sprint 4 ticket 2. Visual design
+// ported from the Stitch "Conversations" mockup (Admin Dashboard redesign) —
+// same table+expandable-row convention as the Knowledge Base page: the list
+// row is the triage view, expanding it reveals the full thread, the ABS §15
+// QA rubric form, and the Playbook §7 "flag for playbook" action.
+//
+// The mockup showed 4 QA dimensions (Grounding/Tone/Escalation/Capture); the
+// real rubric has 5 (ABS §15 also scores Resolution) — all 5 are kept, not
+// trimmed to match the mockup.
 
 import { Fragment, useCallback, useEffect, useState } from "react";
 import { useAdminAuth } from "@/lib/admin-auth-context";
@@ -19,6 +22,7 @@ import {
   type ConversationSummary,
   type QAScoreInput,
 } from "@hospitality/sdk";
+import { domainLabel } from "../../domain-labels";
 
 const QA_DIMENSIONS: Array<{ key: keyof QAScoreInput; label: string }> = [
   { key: "grounding", label: "Grounding" },
@@ -38,6 +42,11 @@ const DEFAULT_QA_INPUT: QAScoreInput = {
 
 type EscalatedFilter = "any" | "true" | "false";
 type LeadFilter = "any" | "true" | "false";
+
+const selectClass =
+  "rounded-lg border border-line bg-white px-3 py-1.5 text-sm text-ink focus:border-brass focus:ring-1 focus:ring-brass focus:outline-none";
+const inputClass =
+  "rounded-lg border border-line bg-white px-3 py-2 text-sm text-ink placeholder:text-mist focus:border-brass focus:ring-1 focus:ring-brass focus:outline-none";
 
 function QaRubricForm({
   detail,
@@ -81,19 +90,23 @@ function QaRubricForm({
   }
 
   return (
-    <div style={{ marginTop: "1rem" }}>
-      <p style={{ fontWeight: 600, marginBottom: "0.5rem" }}>
-        QA Rubric {detail.qaScore ? `(scored by ${detail.qaScore.scoredBy})` : "(not yet scored)"}
+    <div className="mt-6 border-t border-line pt-5">
+      <p className="mb-3 text-sm font-semibold text-ink">
+        QA Rubric{" "}
+        <span className="font-normal text-ink-soft">
+          {detail.qaScore ? `(scored by ${detail.qaScore.scoredBy})` : "(not yet scored)"}
+        </span>
       </p>
-      <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap", marginBottom: "0.5rem" }}>
+      <div className="mb-4 flex flex-wrap gap-4">
         {QA_DIMENSIONS.map((dim) => (
-          <label key={dim.key} style={{ display: "flex", flexDirection: "column", fontSize: "0.85rem" }}>
-            {dim.label}
+          <label key={dim.key} className="flex flex-col gap-1 text-xs text-ink-soft">
+            <span className="font-semibold tracking-wide uppercase">{dim.label}</span>
             <select
               value={input[dim.key]}
               onChange={(e) =>
                 setInput((prev) => ({ ...prev, [dim.key]: Number(e.target.value) }))
               }
+              className={selectClass}
             >
               {[1, 2, 3, 4, 5].map((n) => (
                 <option key={n} value={n}>
@@ -104,8 +117,12 @@ function QaRubricForm({
           </label>
         ))}
       </div>
-      {error && <p style={{ color: "crimson", fontSize: "0.85rem" }}>{error}</p>}
-      <button onClick={() => void handleSubmit()} disabled={saving}>
+      {error && <p className="mb-2 text-xs text-red-600">{error}</p>}
+      <button
+        onClick={() => void handleSubmit()}
+        disabled={saving}
+        className="rounded-lg bg-ink px-5 py-2 text-sm font-medium text-ivory transition-colors hover:bg-ink/90 disabled:opacity-50"
+      >
         {detail.qaScore ? "Revise score" : "Submit score"}
       </button>
     </div>
@@ -151,29 +168,33 @@ function FlagForPlaybookForm({ detail }: { detail: ConversationDetail }) {
   }
 
   return (
-    <div style={{ marginTop: "1rem" }}>
-      <p style={{ fontWeight: 600, marginBottom: "0.5rem" }}>Flag for Playbook</p>
-      <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", marginBottom: "0.5rem" }}>
+    <div className="mt-6 border-t border-line pt-5">
+      <p className="mb-3 text-sm font-semibold text-ink">Flag for Playbook</p>
+      <div className="mb-3 flex flex-wrap gap-3">
         <input
           type="text"
           placeholder="Expected behavior (comma-separated)"
           value={expectedBehavior}
           onChange={(e) => setExpectedBehavior(e.target.value)}
-          style={{ width: 280 }}
+          className={`${inputClass} w-72`}
         />
         <input
           type="text"
           placeholder="Must not (comma-separated)"
           value={mustNot}
           onChange={(e) => setMustNot(e.target.value)}
-          style={{ width: 280 }}
+          className={`${inputClass} w-72`}
         />
-        <button onClick={() => void handleSubmit()} disabled={saving}>
+        <button
+          onClick={() => void handleSubmit()}
+          disabled={saving}
+          className="rounded-lg border border-line px-5 py-2 text-sm font-medium text-ink transition-colors hover:bg-parchment disabled:opacity-50"
+        >
           Flag
         </button>
       </div>
-      {error && <p style={{ color: "crimson", fontSize: "0.85rem" }}>{error}</p>}
-      {result && <p style={{ color: "#1a7f37", fontSize: "0.85rem" }}>Scenario created: {result}</p>}
+      {error && <p className="text-xs text-red-600">{error}</p>}
+      {result && <p className="text-xs text-green-700">Scenario created: {result}</p>}
     </div>
   );
 }
@@ -239,101 +260,154 @@ export default function ConversationsPage() {
   }
 
   return (
-    <div>
-      <h1 style={{ fontSize: "1.2rem", marginBottom: "1rem" }}>Conversations</h1>
+    <div className="flex max-w-6xl flex-col gap-6">
+      <div>
+        <h1 className="font-display text-3xl text-ink">Conversations</h1>
+        <p className="mt-2 max-w-2xl text-sm text-ink-soft">
+          Review AI interactions, score responses, and flag behaviors to refine the concierge
+          playbook.
+        </p>
+      </div>
 
-      <section style={{ display: "flex", gap: "1rem", marginBottom: "1rem" }}>
-        <label style={{ fontSize: "0.85rem" }}>
-          Escalated{" "}
-          <select value={escalatedFilter} onChange={(e) => setEscalatedFilter(e.target.value as EscalatedFilter)}>
+      <div className="flex flex-wrap items-center gap-6">
+        <label className="flex items-center gap-2 text-sm text-ink-soft">
+          Escalated
+          <select
+            value={escalatedFilter}
+            onChange={(e) => setEscalatedFilter(e.target.value as EscalatedFilter)}
+            className={selectClass}
+          >
             <option value="any">Any</option>
             <option value="true">Yes</option>
             <option value="false">No</option>
           </select>
         </label>
-        <label style={{ fontSize: "0.85rem" }}>
-          Has lead{" "}
-          <select value={leadFilter} onChange={(e) => setLeadFilter(e.target.value as LeadFilter)}>
+        <label className="flex items-center gap-2 text-sm text-ink-soft">
+          Has lead
+          <select
+            value={leadFilter}
+            onChange={(e) => setLeadFilter(e.target.value as LeadFilter)}
+            className={selectClass}
+          >
             <option value="any">Any</option>
             <option value="true">Yes</option>
             <option value="false">No</option>
           </select>
         </label>
-      </section>
+      </div>
 
-      {error && <p style={{ color: "crimson", marginBottom: "1rem" }}>{error}</p>}
+      {error && (
+        <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {error}
+        </p>
+      )}
 
-      {conversations === null ? (
-        <p>Loading…</p>
-      ) : conversations.length === 0 ? (
-        <p style={{ color: "#999" }}>No conversations yet — they&apos;ll appear here once guests start chatting.</p>
-      ) : (
-        <table style={{ width: "100%", borderCollapse: "collapse" }}>
-          <thead>
-            <tr style={{ textAlign: "left", borderBottom: "1px solid #ddd" }}>
-              <th style={{ padding: "0.5rem 0" }}>Started</th>
-              <th>Topics</th>
-              <th>Journey</th>
-              <th>Escalated</th>
-              <th>Lead score</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {conversations.map((conversation) => (
-              <Fragment key={conversation.id}>
-                <tr style={{ borderBottom: "1px solid #eee" }}>
-                  <td style={{ padding: "0.5rem 0" }}>
-                    {new Date(conversation.startedAt).toLocaleString()}
-                  </td>
-                  <td>{conversation.domainTags.join(", ") || "—"}</td>
-                  <td>{conversation.journeyState ?? "—"}</td>
-                  <td style={{ color: conversation.escalated ? "#cf222e" : "#999" }}>
-                    {conversation.escalated ? "Yes" : "No"}
-                  </td>
-                  <td>{conversation.leadScore ?? "—"}</td>
-                  <td>
-                    <button onClick={() => void toggleThread(conversation)}>
-                      {expandedId === conversation.id ? "Hide" : "View thread"}
-                    </button>
-                  </td>
-                </tr>
-                {expandedId === conversation.id && (
-                  <tr>
-                    <td colSpan={6} style={{ background: "#fafafa", padding: "1rem" }}>
-                      {detail === null ? (
-                        <p>Loading thread…</p>
+      <div className="overflow-hidden rounded-xl border border-line bg-white">
+        {conversations === null ? (
+          <p className="p-6 text-sm text-ink-soft">Loading…</p>
+        ) : conversations.length === 0 ? (
+          <p className="p-6 text-sm text-mist">
+            No conversations yet — they&apos;ll appear here once guests start chatting.
+          </p>
+        ) : (
+          <table className="w-full border-collapse text-sm">
+            <thead>
+              <tr className="border-b border-line text-left text-xs font-semibold tracking-wide text-ink-soft uppercase">
+                <th className="px-5 py-3 font-semibold">Started</th>
+                <th className="px-3 py-3 font-semibold">Topics</th>
+                <th className="px-3 py-3 font-semibold">Journey</th>
+                <th className="px-3 py-3 font-semibold">Escalated</th>
+                <th className="px-3 py-3 font-semibold">Lead score</th>
+                <th className="px-5 py-3" />
+              </tr>
+            </thead>
+            <tbody>
+              {conversations.map((conversation) => (
+                <Fragment key={conversation.id}>
+                  <tr className="border-b border-line last:border-0 hover:bg-parchment/30">
+                    <td className="px-5 py-3 whitespace-nowrap text-ink">
+                      {new Date(conversation.startedAt).toLocaleString()}
+                    </td>
+                    <td className="px-3 py-3">
+                      {conversation.domainTags.length === 0 ? (
+                        <span className="text-mist">—</span>
                       ) : (
-                        <>
-                          <ul style={{ margin: 0, paddingLeft: "1.25rem" }}>
-                            {detail.messages.map((m) => (
-                              <li key={m.id} style={{ marginBottom: "0.5rem" }}>
-                                <span style={{ fontSize: "0.75rem", color: "#999" }}>
-                                  {m.role}
-                                  {m.journeyState ? ` · ${m.journeyState}` : ""}
-                                  {m.confidenceBand ? ` · ${m.confidenceBand}` : ""}
-                                  {m.escalationTriggered ? " · escalated" : ""}
-                                  {m.leadCaptureTriggered ? " · lead_prompt" : ""}
-                                </span>
-                                <p style={{ margin: "0.25rem 0 0" }}>{m.content}</p>
-                              </li>
-                            ))}
-                          </ul>
-                          <QaRubricForm
-                            detail={detail}
-                            onSaved={() => void loadDetail(conversation.id)}
-                          />
-                          <FlagForPlaybookForm detail={detail} />
-                        </>
+                        <div className="flex flex-wrap gap-1">
+                          {conversation.domainTags.map((tag) => (
+                            <span
+                              key={tag}
+                              className="rounded-md bg-parchment px-2 py-0.5 text-xs text-ink-soft"
+                            >
+                              {domainLabel(tag)}
+                            </span>
+                          ))}
+                        </div>
                       )}
                     </td>
+                    <td className="px-3 py-3 text-ink-soft">{conversation.journeyState ?? "—"}</td>
+                    <td className="px-3 py-3">
+                      {conversation.escalated ? (
+                        <span className="rounded-md bg-red-50 px-2 py-0.5 text-xs font-medium text-red-600">
+                          Yes
+                        </span>
+                      ) : (
+                        <span className="text-mist">No</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-3 text-ink-soft">{conversation.leadScore ?? "—"}</td>
+                    <td className="px-5 py-3 text-right">
+                      <button
+                        onClick={() => void toggleThread(conversation)}
+                        className="rounded-full border border-line px-3 py-1 text-xs font-medium text-ink transition-colors hover:border-brass hover:text-brass"
+                      >
+                        {expandedId === conversation.id ? "Hide" : "View thread"}
+                      </button>
+                    </td>
                   </tr>
-                )}
-              </Fragment>
-            ))}
-          </tbody>
-        </table>
-      )}
+                  {expandedId === conversation.id && (
+                    <tr>
+                      <td colSpan={6} className="border-b border-line bg-parchment/20 p-6">
+                        {detail === null ? (
+                          <p className="text-sm text-ink-soft">Loading thread…</p>
+                        ) : (
+                          <>
+                            <ul className="flex flex-col gap-3">
+                              {detail.messages.map((m) => (
+                                <li
+                                  key={m.id}
+                                  className={`max-w-2xl rounded-xl border p-4 ${
+                                    m.role === "GUEST"
+                                      ? "border-line bg-white"
+                                      : "border-brass/20 bg-champagne/10"
+                                  }`}
+                                >
+                                  <p className="mb-1.5 text-xs font-semibold tracking-wide text-ink-soft uppercase">
+                                    {m.role}
+                                    {m.journeyState ? ` · ${m.journeyState}` : ""}
+                                    {m.confidenceBand ? ` · ${m.confidenceBand}` : ""}
+                                    {m.escalationTriggered ? " · escalated" : ""}
+                                    {m.leadCaptureTriggered ? " · lead_prompt" : ""}
+                                  </p>
+                                  <p className="text-sm text-ink">{m.content}</p>
+                                </li>
+                              ))}
+                            </ul>
+                            <QaRubricForm
+                              detail={detail}
+                              onSaved={() => void loadDetail(conversation.id)}
+                            />
+                            <FlagForPlaybookForm detail={detail} />
+                          </>
+                        )}
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
     </div>
   );
 }
