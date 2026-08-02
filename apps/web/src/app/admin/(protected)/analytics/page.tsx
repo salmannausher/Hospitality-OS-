@@ -1,9 +1,9 @@
 "use client";
 
 // Admin Flow — Analytics (UX §12 "Insights, Not Charts"), Sprint 4 ticket 6.
-// Bare/unstyled, matching the rest of the protected shell (no design system
-// yet, Sprint 5 decision pending). Deliberately two ranked lists, not a
-// chart library — matches the UX doc's own framing.
+// Visual design ported from the Stitch "Analytics" mockup (Admin Dashboard
+// redesign). Deliberately two ranked lists, not a chart library — matches the
+// UX doc's own framing.
 //
 // `domain` here is the real IA §2 taxonomy (8 fixed values: accommodation,
 // booking, dining, spa, property, local_area, policies, events) — coarser
@@ -22,21 +22,8 @@ import {
   type MissingInformationGap,
   type TopicDistributionRow,
 } from "@hospitality/sdk";
-
-const DOMAIN_LABELS: Record<string, string> = {
-  accommodation: "Accommodation",
-  booking: "Booking",
-  dining: "Dining",
-  spa: "Spa",
-  property: "Property",
-  local_area: "Local Area",
-  policies: "Policies",
-  events: "Events",
-};
-
-function domainLabel(domain: string): string {
-  return DOMAIN_LABELS[domain] ?? domain;
-}
+import { domainLabel } from "../../domain-labels";
+import { AlertIcon, CheckIcon } from "../../icons";
 
 export default function AnalyticsPage() {
   const { session, sessionData } = useAdminAuth();
@@ -68,59 +55,87 @@ export default function AnalyticsPage() {
     };
   }, [accessToken, hotelId]);
 
+  const maxTopicCount = Math.max(1, ...(topics ?? []).map((t) => t.count));
+
   return (
-    <div>
-      <h1 style={{ fontSize: "1.2rem", marginBottom: "1rem" }}>Analytics</h1>
+    <div className="flex max-w-5xl flex-col gap-6">
+      <div>
+        <h1 className="font-display text-3xl text-ink">Analytics</h1>
+        <p className="mt-2 max-w-2xl text-sm text-ink-soft">
+          Insight into guest inquiries and knowledge base performance. Focus on filling
+          information gaps to improve AI response confidence.
+        </p>
+      </div>
 
-      {error && <p style={{ color: "crimson", marginBottom: "1rem" }}>{error}</p>}
+      {error && (
+        <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {error}
+        </p>
+      )}
 
-      <div style={{ display: "flex", gap: "3rem", flexWrap: "wrap" }}>
-        <section style={{ minWidth: 260 }}>
-          <p style={{ fontWeight: 600, marginBottom: "0.75rem" }}>Guests Ask Most About</p>
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <section className="rounded-xl border border-line bg-white p-6">
+          <h2 className="mb-5 font-display text-xl text-ink">Guests Ask Most About</h2>
           {topics === null ? (
-            <p>Loading…</p>
+            <p className="text-sm text-ink-soft">Loading…</p>
           ) : topics.length === 0 ? (
-            <p style={{ color: "#999" }}>No conversations yet.</p>
+            <p className="text-sm text-mist">No conversations yet.</p>
           ) : (
-            <ol style={{ margin: 0, paddingLeft: "1.25rem" }}>
+            <div className="space-y-4">
               {topics.map((t) => (
-                <li key={t.domain} style={{ marginBottom: "0.4rem" }}>
-                  {domainLabel(t.domain)}{" "}
-                  <span style={{ color: "#999", fontSize: "0.85rem" }}>
-                    ({t.count} conversation{t.count === 1 ? "" : "s"})
-                  </span>
-                </li>
+                <div key={t.domain}>
+                  <div className="mb-1.5 flex items-end justify-between">
+                    <span className="text-sm font-medium text-ink">{domainLabel(t.domain)}</span>
+                    <span className="text-xs text-ink-soft">
+                      {t.count} conversation{t.count === 1 ? "" : "s"}
+                    </span>
+                  </div>
+                  <div className="h-1.5 w-full overflow-hidden rounded-full bg-parchment">
+                    <div
+                      className="h-full rounded-full bg-brass"
+                      style={{ width: `${Math.max(6, (t.count / maxTopicCount) * 100)}%` }}
+                    />
+                  </div>
+                </div>
               ))}
-            </ol>
+            </div>
           )}
         </section>
 
-        <section style={{ minWidth: 320 }}>
-          <p style={{ fontWeight: 600, marginBottom: "0.75rem" }}>Missing Information</p>
+        <section className="relative overflow-hidden rounded-xl border border-line bg-white p-6">
+          <div className="absolute top-0 bottom-0 left-0 w-1 bg-red-500" />
+          <h2 className="mb-5 flex items-center gap-2 font-display text-xl text-ink">
+            <AlertIcon className="h-5 w-5 text-red-500" />
+            Missing Information
+          </h2>
           {gaps === null ? (
-            <p>Loading…</p>
+            <p className="text-sm text-ink-soft">Loading…</p>
           ) : gaps.length === 0 ? (
-            <p style={{ color: "#999" }}>
+            <p className="text-sm text-mist">
               No repeated low-confidence topics this week — nothing urgent to add.
             </p>
           ) : (
             <>
-              <ul style={{ margin: "0 0 1.25rem", paddingLeft: "1.25rem" }}>
+              <ul className="mb-6 space-y-3">
                 {gaps.map((g) => (
-                  <li key={g.domain} style={{ marginBottom: "0.5rem" }}>
-                    <strong>{domainLabel(g.domain)}</strong>{" "}
-                    <span style={{ color: "#9a6700" }}>
-                      ({g.lowConfidenceCount} Low-Confidence answers this week — no indexed
-                      content found)
+                  <li key={g.domain} className="flex items-baseline justify-between gap-3">
+                    <span className="text-sm font-medium text-ink">{domainLabel(g.domain)}</span>
+                    <span className="text-right text-xs text-amber-700">
+                      {g.lowConfidenceCount} low-confidence answer
+                      {g.lowConfidenceCount === 1 ? "" : "s"} this week — no indexed content found
                     </span>
                   </li>
                 ))}
               </ul>
-              <p style={{ fontWeight: 600, marginBottom: "0.5rem" }}>Recommended Action</p>
-              <ul style={{ margin: 0, paddingLeft: "1.25rem" }}>
+              <p className="mb-3 flex items-center gap-2 text-sm font-semibold text-ink">
+                <CheckIcon className="h-4 w-4 text-green-600" />
+                Recommended Action
+              </p>
+              <ul className="space-y-2">
                 {gaps.map((g) => (
-                  <li key={g.domain} style={{ marginBottom: "0.4rem" }}>
-                    → {g.recommendedAction}
+                  <li key={g.domain} className="flex items-start gap-2 text-sm text-ink-soft">
+                    <span className="text-brass">→</span>
+                    {g.recommendedAction}
                   </li>
                 ))}
               </ul>

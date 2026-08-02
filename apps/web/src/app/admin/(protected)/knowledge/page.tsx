@@ -1,16 +1,34 @@
 "use client";
 
-// Admin Flow — Knowledge Upload & Validation (UX §9), Sprint 2. Bare/unstyled,
-// matching the rest of the protected shell (no design system yet, Sprint 5
-// decision pending) — this page proves upload → process → status → chunk
-// preview works end to end, not final visual design.
+// Admin Flow — Knowledge Upload & Validation (UX §9), Sprint 2. Visual design
+// ported from the Stitch "Knowledge Base" mockup (Admin Dashboard redesign).
+//
+// The mockup's "Knowledge Health" panel and storage-quota line have no real
+// backing data (no storage-quota concept exists anywhere in the API spec) —
+// storage is dropped entirely rather than fabricated, and "Index Coverage" is
+// instead a real percentage computed from the already-loaded document list
+// (indexed / total), not an invented number.
 //
 // The guided "Needs Review" edit form UX §9 also describes isn't built here —
 // entity tables have no documentId link back to their source document, so
 // there's nothing to target a pre-filled form at yet (see
 // docs/14-sprint-backlog.md). validationIssues are shown read-only instead.
+//
+// Search/status-filter are real client-side filtering over the loaded page
+// (same pattern as the Leads page) — no search endpoint exists to back a
+// server-side version. Drag-and-drop onto the upload zone is real (same
+// uploadKnowledgeDocument call the file-picker path uses), not decorative.
 
-import { Fragment, useCallback, useEffect, useState, type ChangeEvent, type FormEvent } from "react";
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type ChangeEvent,
+  type DragEvent,
+  type FormEvent,
+} from "react";
 import { useAdminAuth } from "@/lib/admin-auth-context";
 import {
   getKnowledgeDocumentChunks,
@@ -20,6 +38,7 @@ import {
   type KnowledgeChunkPreview,
   type KnowledgeDocumentSummary,
 } from "@hospitality/sdk";
+import { BookIcon, PlugIcon, SearchIcon, SparkIcon } from "../../icons";
 
 // UX §9: "progress labels: 'Reading…' → 'Chunking…' → 'Embedding…' → 'Ready' —
 // plain-language status, not raw pipeline terminology."
@@ -32,12 +51,19 @@ const STAGE_LABELS: Record<string, string> = {
   VALIDATING: "Checking…",
 };
 
-const STATUS_BADGE: Record<string, { label: string; color: string }> = {
-  INDEXED: { label: "Indexed", color: "#1a7f37" },
-  NEEDS_REVIEW: { label: "Needs Review", color: "#9a6700" },
-  FAILED: { label: "Failed", color: "#cf222e" },
-  PARSING: { label: "Processing…", color: "#666" },
+const STATUS_BADGE: Record<string, { label: string; className: string }> = {
+  INDEXED: { label: "Indexed", className: "bg-green-50 text-green-700" },
+  NEEDS_REVIEW: { label: "Needs Review", className: "bg-amber-50 text-amber-700" },
+  FAILED: { label: "Failed", className: "bg-red-50 text-red-700" },
+  PARSING: { label: "Processing…", className: "bg-parchment text-ink-soft" },
 };
+
+type StatusFilter = "any" | keyof typeof STATUS_BADGE;
+
+const inputClass =
+  "rounded-lg border border-line bg-white px-3 py-2 text-sm text-ink placeholder:text-mist focus:border-brass focus:ring-1 focus:ring-brass focus:outline-none";
+const selectClass =
+  "rounded-lg border border-line bg-white px-3 py-1.5 text-sm text-ink focus:border-brass focus:ring-1 focus:ring-brass focus:outline-none";
 
 export default function KnowledgeBasePage() {
   const { session, sessionData } = useAdminAuth();
@@ -50,10 +76,13 @@ export default function KnowledgeBasePage() {
   const [documents, setDocuments] = useState<KnowledgeDocumentSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [dragActive, setDragActive] = useState(false);
   const [urlInput, setUrlInput] = useState("");
   const [stageLabels, setStageLabels] = useState<Record<string, string>>({});
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [chunks, setChunks] = useState<KnowledgeChunkPreview[] | null>(null);
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("any");
 
   const refresh = useCallback(async () => {
     if (!accessToken) return;
@@ -110,10 +139,8 @@ export default function KnowledgeBasePage() {
     return () => clearInterval(interval);
   }, [documents, accessToken, hotelId, refresh]);
 
-  async function handleFileChange(e: ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    e.target.value = "";
-    if (!file || !accessToken) return;
+  async function upload(file: File) {
+    if (!accessToken) return;
     setUploading(true);
     setError(null);
     try {
@@ -124,6 +151,20 @@ export default function KnowledgeBasePage() {
     } finally {
       setUploading(false);
     }
+  }
+
+  async function handleFileChange(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    await upload(file);
+  }
+
+  function handleDrop(e: DragEvent<HTMLLabelElement>) {
+    e.preventDefault();
+    setDragActive(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) void upload(file);
   }
 
   async function handleUrlSubmit(e: FormEvent) {
@@ -159,112 +200,256 @@ export default function KnowledgeBasePage() {
     }
   }
 
-  return (
-    <div>
-      <h1 style={{ fontSize: "1.2rem", marginBottom: "1rem" }}>Knowledge Base</h1>
+  const visibleDocuments = useMemo(() => {
+    if (!documents) return documents;
+    return documents.filter((doc) => {
+      if (statusFilter !== "any" && doc.status !== statusFilter) return false;
+      const q = search.trim().toLowerCase();
+      if (!q) return true;
+      return doc.filename.toLowerCase().includes(q) || (doc.sourceUrl ?? "").toLowerCase().includes(q);
+    });
+  }, [documents, search, statusFilter]);
 
-      <section style={{ display: "flex", gap: "2rem", marginBottom: "2rem", flexWrap: "wrap" }}>
-        <div>
-          <p style={{ fontWeight: 600, marginBottom: "0.5rem" }}>Upload a document</p>
-          <input type="file" accept=".pdf,.docx,.txt,.md" onChange={handleFileChange} disabled={uploading} />
-        </div>
-        <form onSubmit={handleUrlSubmit}>
-          <p style={{ fontWeight: 600, marginBottom: "0.5rem" }}>Sync from a URL</p>
+  const needsAttentionCount =
+    documents?.filter((d) => d.status === "NEEDS_REVIEW" || d.status === "FAILED").length ?? 0;
+  const indexCoveragePct =
+    documents && documents.length > 0
+      ? Math.round((documents.filter((d) => d.status === "INDEXED").length / documents.length) * 100)
+      : null;
+
+  return (
+    <div className="flex max-w-6xl flex-col gap-6">
+      <div>
+        <h1 className="font-display text-3xl text-ink">Knowledge Base</h1>
+        <p className="mt-2 max-w-2xl text-sm text-ink-soft">
+          Manage the foundational intelligence of your concierge AI. Upload static documents or
+          sync dynamic URLs to ensure your guests receive the most accurate, up-to-date
+          information.
+        </p>
+      </div>
+
+      <section className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <label
+          onDragOver={(e) => {
+            e.preventDefault();
+            setDragActive(true);
+          }}
+          onDragLeave={() => setDragActive(false)}
+          onDrop={handleDrop}
+          className={`flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed p-8 text-center transition-colors ${
+            dragActive ? "border-brass bg-champagne/10" : "border-line bg-white hover:border-brass/50"
+          }`}
+        >
+          <BookIcon className="h-6 w-6 text-brass" />
+          <p className="text-sm font-medium text-ink">Upload Document</p>
+          <p className="text-xs text-ink-soft">
+            Supported: PDF, TXT, MD, DOCX (Max 50MB)
+            <br />
+            Drag and drop your file here or click to browse
+          </p>
           <input
-            type="url"
-            placeholder="https://yourhotel.com/dining"
-            value={urlInput}
-            onChange={(e) => setUrlInput(e.target.value)}
+            type="file"
+            accept=".pdf,.docx,.txt,.md"
+            onChange={handleFileChange}
             disabled={uploading}
-            style={{ width: 280, marginRight: "0.5rem" }}
+            className="hidden"
           />
-          <button type="submit" disabled={uploading || !urlInput}>
-            Sync
-          </button>
+        </label>
+
+        <form
+          onSubmit={handleUrlSubmit}
+          className="flex flex-col justify-center gap-3 rounded-xl border border-line bg-white p-8"
+        >
+          <div className="flex items-center gap-2">
+            <PlugIcon className="h-5 w-5 text-brass" />
+            <p className="text-sm font-medium text-ink">Sync from URL</p>
+          </div>
+          <p className="text-xs text-ink-soft">Automatically extract content from a public webpage.</p>
+          <label className="mt-1 block text-left">
+            <span className="mb-1 block text-xs font-semibold tracking-wide text-ink-soft uppercase">
+              Web Address
+            </span>
+            <div className="flex gap-2">
+              <input
+                type="url"
+                placeholder="https://yourhotel.com/dining"
+                value={urlInput}
+                onChange={(e) => setUrlInput(e.target.value)}
+                disabled={uploading}
+                className={`${inputClass} flex-1`}
+              />
+              <button
+                type="submit"
+                disabled={uploading || !urlInput}
+                className="rounded-lg bg-ink px-4 py-2 text-sm font-medium text-ivory transition-colors hover:bg-ink/90 disabled:opacity-50"
+              >
+                Sync
+              </button>
+            </div>
+          </label>
         </form>
       </section>
 
-      {error && <p style={{ color: "crimson", marginBottom: "1rem" }}>{error}</p>}
-
-      {documents === null ? (
-        <p>Loading…</p>
-      ) : documents.length === 0 ? (
-        <p style={{ color: "#999" }}>No documents yet — upload one above.</p>
-      ) : (
-        <table style={{ width: "100%", borderCollapse: "collapse" }}>
-          <thead>
-            <tr style={{ textAlign: "left", borderBottom: "1px solid #ddd" }}>
-              <th style={{ padding: "0.5rem 0" }}>Document</th>
-              <th>Status</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {documents.map((doc) => {
-              const badge = STATUS_BADGE[doc.status] ?? { label: doc.status, color: "#666" };
-              return (
-                <Fragment key={doc.id}>
-                  <tr style={{ borderBottom: "1px solid #eee" }}>
-                    <td style={{ padding: "0.5rem 0" }}>
-                      {doc.filename}
-                      {doc.sourceUrl && (
-                        <span style={{ color: "#999", fontSize: "0.8rem" }}> — {doc.sourceUrl}</span>
-                      )}
-                    </td>
-                    <td>
-                      <span style={{ color: badge.color }}>● {badge.label}</span>
-                      {doc.status === "PARSING" && stageLabels[doc.id] && (
-                        <span style={{ color: "#999", marginLeft: "0.5rem", fontSize: "0.85rem" }}>
-                          {stageLabels[doc.id]}
-                        </span>
-                      )}
-                    </td>
-                    <td>
-                      <button onClick={() => void toggleChunks(doc)}>
-                        {expandedId === doc.id ? "Hide" : "Preview chunks"}
-                      </button>
-                    </td>
-                  </tr>
-                  {expandedId === doc.id && (
-                    <tr>
-                      <td colSpan={3} style={{ background: "#fafafa", padding: "1rem" }}>
-                        {doc.validationIssues.length > 0 && (
-                          <div style={{ marginBottom: "1rem" }}>
-                            <p style={{ fontWeight: 600, marginBottom: "0.25rem" }}>Needs review:</p>
-                            <ul style={{ margin: 0, paddingLeft: "1.25rem" }}>
-                              {doc.validationIssues.map((issue, i) => (
-                                <li key={i} style={{ color: "#9a6700" }}>
-                                  {issue}
-                                </li>
-                              ))}
-                            </ul>
-                          </div>
-                        )}
-                        {chunks === null ? (
-                          <p>Loading chunks…</p>
-                        ) : chunks.length === 0 ? (
-                          <p style={{ color: "#999" }}>No chunks yet.</p>
-                        ) : (
-                          <ul style={{ margin: 0, paddingLeft: "1.25rem" }}>
-                            {chunks.map((c) => (
-                              <li key={c.id} style={{ marginBottom: "0.5rem" }}>
-                                <span style={{ fontSize: "0.75rem", color: "#999" }}>
-                                  [{c.priority}] {c.domainTags.join(", ") || "untagged"}
-                                </span>
-                                <p style={{ margin: "0.25rem 0 0" }}>{c.content}</p>
-                              </li>
-                            ))}
-                          </ul>
-                        )}
-                      </td>
-                    </tr>
-                  )}
-                </Fragment>
-              );
-            })}
-          </tbody>
-        </table>
+      {error && (
+        <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {error}
+        </p>
       )}
+
+      <section className="grid grid-cols-1 gap-6 lg:grid-cols-12">
+        <div className="flex flex-col gap-4 lg:col-span-8">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h2 className="font-display text-xl text-ink">Document Library</h2>
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="relative">
+                <SearchIcon className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-mist" />
+                <input
+                  type="text"
+                  placeholder="Search documents…"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className={`${inputClass} w-56 pl-9`}
+                />
+              </div>
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
+                className={selectClass}
+              >
+                <option value="any">All statuses</option>
+                <option value="INDEXED">Indexed</option>
+                <option value="NEEDS_REVIEW">Needs Review</option>
+                <option value="FAILED">Failed</option>
+                <option value="PARSING">Processing</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="overflow-hidden rounded-xl border border-line bg-white">
+            {visibleDocuments === null ? (
+              <p className="p-6 text-sm text-ink-soft">Loading…</p>
+            ) : visibleDocuments.length === 0 ? (
+              <p className="p-6 text-sm text-mist">
+                {documents && documents.length > 0
+                  ? "No documents match your search."
+                  : "No documents yet — upload one above."}
+              </p>
+            ) : (
+              <table className="w-full border-collapse text-sm">
+                <thead>
+                  <tr className="border-b border-line text-left text-xs font-semibold tracking-wide text-ink-soft uppercase">
+                    <th className="px-5 py-3 font-semibold">Document Name</th>
+                    <th className="px-3 py-3 font-semibold">Status</th>
+                    <th className="px-5 py-3" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {visibleDocuments.map((doc) => {
+                    const badge = STATUS_BADGE[doc.status] ?? {
+                      label: doc.status,
+                      className: "bg-parchment text-ink-soft",
+                    };
+                    return (
+                      <Fragment key={doc.id}>
+                        <tr className="border-b border-line last:border-0 hover:bg-parchment/30">
+                          <td className="px-5 py-3 text-ink">
+                            {doc.filename}
+                            {doc.sourceUrl && (
+                              <span className="ml-2 text-xs text-mist">{doc.sourceUrl}</span>
+                            )}
+                          </td>
+                          <td className="px-3 py-3">
+                            <span className={`rounded-md px-2 py-0.5 text-xs font-medium ${badge.className}`}>
+                              {badge.label}
+                            </span>
+                            {doc.status === "PARSING" && stageLabels[doc.id] && (
+                              <span className="ml-2 text-xs text-ink-soft">{stageLabels[doc.id]}</span>
+                            )}
+                          </td>
+                          <td className="px-5 py-3 text-right">
+                            <button
+                              onClick={() => void toggleChunks(doc)}
+                              className="rounded-full border border-line px-3 py-1 text-xs font-medium text-ink transition-colors hover:border-brass hover:text-brass"
+                            >
+                              {expandedId === doc.id ? "Hide" : "Preview"}
+                            </button>
+                          </td>
+                        </tr>
+                        {expandedId === doc.id && (
+                          <tr>
+                            <td colSpan={3} className="border-b border-line bg-parchment/20 p-5">
+                              {doc.validationIssues.length > 0 && (
+                                <div className="mb-4">
+                                  <p className="mb-1 text-sm font-semibold text-ink">Needs review:</p>
+                                  <ul className="list-disc space-y-1 pl-5 text-sm text-amber-700">
+                                    {doc.validationIssues.map((issue, i) => (
+                                      <li key={i}>{issue}</li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              )}
+                              {chunks === null ? (
+                                <p className="text-sm text-ink-soft">Loading chunks…</p>
+                              ) : chunks.length === 0 ? (
+                                <p className="text-sm text-mist">No chunks yet.</p>
+                              ) : (
+                                <ul className="flex flex-col gap-3">
+                                  {chunks.map((c) => (
+                                    <li key={c.id} className="rounded-lg border border-line bg-white p-3">
+                                      <span className="text-xs text-ink-soft">
+                                        [{c.priority}] {c.domainTags.join(", ") || "untagged"}
+                                      </span>
+                                      <p className="mt-1 text-sm text-ink">{c.content}</p>
+                                    </li>
+                                  ))}
+                                </ul>
+                              )}
+                            </td>
+                          </tr>
+                        )}
+                      </Fragment>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-4 lg:col-span-4">
+          <div className="rounded-xl border border-line bg-white p-6">
+            <div className="mb-4 flex items-center gap-2">
+              <SparkIcon className="h-4 w-4 text-brass" />
+              <h3 className="font-display text-lg text-ink">Knowledge Health</h3>
+            </div>
+            {indexCoveragePct === null ? (
+              <p className="text-sm text-mist">Upload documents to see coverage.</p>
+            ) : (
+              <>
+                <div className="mb-2 flex items-baseline justify-between">
+                  <span className="text-sm text-ink-soft">Index Coverage</span>
+                  <span className="font-display text-2xl text-ink">{indexCoveragePct}%</span>
+                </div>
+                <div className="mb-4 h-1.5 w-full overflow-hidden rounded-full bg-parchment">
+                  <div className="h-full rounded-full bg-brass" style={{ width: `${indexCoveragePct}%` }} />
+                </div>
+                <p className="text-sm text-ink-soft">
+                  {needsAttentionCount === 0
+                    ? "Your concierge AI has successfully indexed all of your provided materials."
+                    : `Your concierge AI has successfully indexed most of your provided materials.`}
+                </p>
+                {needsAttentionCount > 0 && (
+                  <p className="mt-2 text-sm font-medium text-amber-700">
+                    Recommendation: review the {needsAttentionCount} item
+                    {needsAttentionCount === 1 ? "" : "s"} needing attention to ensure responses
+                    remain accurate.
+                  </p>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+      </section>
     </div>
   );
 }
