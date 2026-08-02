@@ -4,12 +4,12 @@ import { Reveal } from "./Reveal";
 const ITEMS = [
   {
     numeral: "I",
-    title: "It never invents.",
-    body: "When it isn't certain, it says so — and tells your team exactly which document to add next, instead of failing silently in front of a guest.",
+    title: "It knows when not to answer.",
+    body: "When confidence is low, it offers a human handoff instead. The missing topic appears in the admin portal with a specific source for your team to add.",
   },
   {
     numeral: "II",
-    title: "It understands occasions.",
+    title: "It connects occasions to recommendations.",
     body: "An anniversary, an ocean-view suite, and a couples massage are one recommendation — curated once by your team, not searched for three times.",
   },
   {
@@ -19,8 +19,8 @@ const ITEMS = [
   },
   {
     numeral: "IV",
-    title: "It wears your name.",
-    body: "White-label and multi-tenant from day one. One property or a portfolio — each with its own voice, its own colors, its own typography.",
+    title: "It carries each hotel's brand.",
+    body: "White-label and multi-tenant from day one. One property or a portfolio — each with its own greeting, tone, logo, colors, typography, and booking link.",
   },
 ];
 
@@ -29,11 +29,11 @@ export function Difference() {
     <section id="difference" className="px-6 py-28 md:py-40">
       <div className="mx-auto max-w-6xl">
         <Reveal>
-          <Kicker index="03">The difference</Kicker>
+          <Kicker index="02">The difference</Kicker>
         </Reveal>
         <Reveal delay={0.1}>
           <h2 className="mt-8 max-w-2xl font-display text-4xl font-light leading-[1.12] md:text-5xl">
-            Four things no chatbot does.
+            Four differences built into the product.
           </h2>
         </Reveal>
 

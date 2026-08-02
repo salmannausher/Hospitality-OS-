@@ -2,5 +2,5 @@
 export const CONTACT_EMAIL = "hello@devsphinx.com";
 
 export const DEMO_MAILTO = `mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent(
-  "Demo request — Hospitality AI OS",
+  "Walkthrough request — Hospitality AI OS",
 )}`;

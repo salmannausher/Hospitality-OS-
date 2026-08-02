@@ -23,15 +23,15 @@ export function Closing() {
         </Reveal>
         <Reveal delay={0.2}>
           <p className="mx-auto mt-8 max-w-xl text-lg leading-relaxed text-mist">
-            A twenty-minute walkthrough with a live property — not a slide
-            deck. We&rsquo;ll show you how it thinks, where it refuses to
-            guess, and what it does when a guest is unhappy.
+            A twenty-minute walkthrough using Bellevue&rsquo;s live demo site
+            — not a slide deck. See how it answers from hotel content, surfaces
+            what it cannot answer, and hands an unhappy guest to staff.
           </p>
         </Reveal>
         <Reveal delay={0.3} className="mt-12">
           <div className="flex flex-wrap items-center justify-center gap-6">
             <CtaLink href={DEMO_MAILTO} variant="solid-dark">
-              Book a demo
+              Request a walkthrough
             </CtaLink>
             <a
               href={`mailto:${CONTACT_EMAIL}`}

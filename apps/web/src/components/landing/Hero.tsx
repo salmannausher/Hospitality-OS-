@@ -39,16 +39,16 @@ export function Hero() {
           {...fade(0.4)}
           className="mt-9 max-w-2xl text-lg leading-relaxed text-ink-soft"
         >
-          Hospitality AI OS learns your property the way a new concierge would —
-          then answers every guest with the certainty of someone who has worked
-          your desk for years. Grounded in what you actually offer. Never
-          guessing.
+          Hospitality AI OS answers from your property&rsquo;s approved content,
+          connects rooms and experiences the way your team would, and hands
+          uncertain or sensitive requests to a person. White-label for the
+          agencies that build hotel websites.
         </motion.p>
 
         <motion.div {...fade(0.55)} className="mt-12 flex flex-wrap gap-4">
-          <CtaLink href="#book">Book a demo</CtaLink>
-          <CtaLink href="#demo" variant="outline">
-            See how it thinks
+          <CtaLink href="#demo">See it in practice</CtaLink>
+          <CtaLink href="#book" variant="outline">
+            Get in touch
           </CtaLink>
         </motion.div>
 
@@ -56,8 +56,8 @@ export function Hero() {
           {...fade(0.8)}
           className="mt-24 flex flex-wrap items-center justify-between gap-4 border-t border-line pt-6 text-[0.68rem] uppercase tracking-[0.2em] text-ink-soft md:mt-32"
         >
-          <span>Before · during · after the stay</span>
-          <span className="hidden md:inline">Every language, every hour</span>
+          <span>Researching · booking · staying</span>
+          <span className="hidden md:inline">Grounded in your property</span>
           <span>Always in your voice</span>
         </motion.div>
       </div>

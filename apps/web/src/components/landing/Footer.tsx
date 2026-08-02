@@ -6,7 +6,8 @@ export function Footer() {
           Hospitality AI OS
         </p>
         <p className="text-sm text-mist">
-          An AI concierge platform for luxury hospitality.
+          Grounded answers, curated recommendations, and human handoff for
+          hotel websites.
         </p>
         <p className="text-sm text-mist">© 2026 Devsphinx</p>
       </div>

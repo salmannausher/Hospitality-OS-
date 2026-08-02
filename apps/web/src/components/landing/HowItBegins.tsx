@@ -10,12 +10,12 @@ const STEPS = [
   {
     n: "02",
     title: "Review",
-    body: "It shows your team what it learned — and asks for exactly what's missing, before a guest ever has to.",
+    body: "Your team reviews what was indexed. Validation issues and repeated knowledge gaps show which source to add next.",
   },
   {
     n: "03",
     title: "Welcome",
-    body: "It joins your website in your brand and your voice, greeting guests before, during, and after every stay.",
+    body: "It joins your website in your brand and voice, helping guests while they research, book, prepare, or ask for help during a stay.",
   },
 ];
 
@@ -24,7 +24,7 @@ export function HowItBegins() {
     <section className="bg-parchment px-6 py-28 md:py-36">
       <div className="mx-auto max-w-6xl">
         <Reveal>
-          <Kicker index="04">How it begins</Kicker>
+          <Kicker index="03">How it begins</Kicker>
         </Reveal>
         <Reveal delay={0.1}>
           <h2 className="mt-8 max-w-2xl font-display text-4xl font-light leading-[1.12] md:text-5xl">

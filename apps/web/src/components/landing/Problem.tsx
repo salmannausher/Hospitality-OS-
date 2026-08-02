@@ -20,10 +20,10 @@ export function Problem() {
           <div className="space-y-6 leading-relaxed text-ink-soft lg:col-span-5 lg:col-start-8">
             <Reveal delay={0.2}>
               <p>
-                The concierge desk was never really about information. It is
-                about judgment — knowing a routine question from a guest who is
-                quietly unhappy, and a request from an occasion. Most hotel
-                chatbots know neither.
+                The concierge desk was never just about information. It is
+                about judgment — knowing when to answer, when an anniversary
+                calls for a recommendation, and when an unhappy guest needs a
+                person. Most hotel chatbots treat all three the same.
               </p>
             </Reveal>
             <Reveal delay={0.3}>

@@ -44,9 +44,9 @@ export function Nav() {
           ))}
           <a
             href="#book"
-            className="inline-flex h-9 items-center bg-ink px-5 text-[0.7rem] font-medium uppercase tracking-[0.18em] text-ivory transition-colors duration-300 hover:bg-brass"
+            className="inline-flex h-11 items-center bg-ink px-5 text-[0.7rem] font-medium uppercase tracking-[0.18em] text-ivory transition-colors duration-300 hover:bg-brass"
           >
-            Book a demo
+            Get in touch
           </a>
         </div>
       </nav>

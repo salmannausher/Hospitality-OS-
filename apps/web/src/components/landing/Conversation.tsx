@@ -53,7 +53,7 @@ export function Conversation() {
       className="grain relative bg-night px-6 py-28 text-ivory md:py-40"
     >
       <div className="relative mx-auto max-w-2xl">
-        <Kicker index="02" tone="dark">
+        <Kicker index="05" tone="dark">
           In practice
         </Kicker>
 
@@ -73,27 +73,28 @@ export function Conversation() {
           className="mt-12 space-y-10"
         >
           <Guest>
-            Hi — we land close to midnight. Is check-in still possible that
-            late?
+            We&rsquo;re planning four nights for our tenth anniversary. Which
+            room would you suggest?
           </Guest>
 
           <Concierge>
             <p>
-              Of course. The desk is staffed through the night, and I have
-              noted your late arrival so the team expects you. May I have a
-              light supper waiting in the room?
+              For two guests, I&rsquo;d start with the Ocean View Suite: a
+              private balcony, one king bed, and room for up to three. Rates
+              are $750–$950 per night.
             </p>
           </Concierge>
 
           <Guest>
-            That would be lovely. It&rsquo;s actually our tenth anniversary.
+            And something special for dinner and the spa?
           </Guest>
 
           <Concierge>
             <p>
-              Congratulations. Then, if I may — the Ocean-View Suite for your
-              nights with us, a couples massage at the spa, and a private
-              dinner on the terrace. I can ask reservations to hold all three.
+              Bellevue pairs the suite with dinner at The Rooftop and a
+              60-minute Couples Massage. The restaurant serves dinner from
+              6–10 pm; the massage is $420 for two. Would you like the hotel
+              team to contact you about availability?
             </p>
             <div className="mt-6 border border-champagne/25 bg-ivory/[0.04]">
               <div
@@ -102,11 +103,11 @@ export function Conversation() {
               />
               <div className="p-5">
                 <p className="font-display text-xl text-ivory">
-                  The Anniversary Evening
+                  An anniversary at Bellevue
                 </p>
                 <p className="mt-1.5 text-sm leading-relaxed text-mist">
-                  Ocean-view suite · couples massage · private dinner on the
-                  terrace — held as one reservation.
+                  Ocean View Suite · The Rooftop at Bellevue · Couples Massage
+                  — curated together by the hotel.
                 </p>
               </div>
             </div>
@@ -116,8 +117,8 @@ export function Conversation() {
             variants={item}
             className="border-t border-ivory/10 pt-10 text-center leading-relaxed text-mist"
           >
-            No script. No decision tree. It knows the property — and it
-            recognizes an anniversary when it hears one.
+            The hotel curates the relationship once. The concierge recognizes
+            the occasion and uses it at the right moment.
           </motion.p>
         </motion.div>
       </div>
