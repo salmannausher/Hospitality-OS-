@@ -5,11 +5,13 @@ import {
   ForbiddenException,
   Injectable,
 } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
 import type { Request } from 'express';
 import type { Role } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
 import type { AuthenticatedRequest } from '../auth/supabase-auth.guard';
 import { authorizeHotelAccess } from './authorize-hotel-access';
+import { REQUIRED_ROLES_KEY } from './require-role.decorator';
 
 /** Augmented by HotelScopeGuard — the hotelId every tenant-scoped admin call
  * runs against, already validated against the caller's memberships, plus the
@@ -38,10 +40,18 @@ export interface HotelScopedRequest extends AuthenticatedRequest {
  * API §3.1, findings-log.md #24): `VIEWER` can read but never mutate.
  * Applied here rather than per-controller so no mutating endpoint can be
  * added later without this check automatically covering it.
+ *
+ * Additionally enforces any route-level `@RequireRole(...)` metadata (API
+ * §1's "only HOTEL_ADMIN+ touch brand/prompt/knowledge" — findings-log.md
+ * #38) — resolved once here, same as the VIEWER rule, rather than
+ * re-implemented per controller.
  */
 @Injectable()
 export class HotelScopeGuard implements CanActivate {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly reflector: Reflector,
+  ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const req = context.switchToHttp().getRequest<HotelScopedRequest>();
@@ -61,7 +71,7 @@ export class HotelScopeGuard implements CanActivate {
     if (!requested) {
       if (hotels.length === 1) {
         req.hotelId = hotels[0].id;
-        return this.authorizeRole(req);
+        return this.authorizeRole(req, context);
       }
       throw new BadRequestException({
         error: {
@@ -84,18 +94,36 @@ export class HotelScopeGuard implements CanActivate {
     }
 
     req.hotelId = requested;
-    return this.authorizeRole(req);
+    return this.authorizeRole(req, context);
   }
 
-  /** Resolves `req.role` and enforces the one documented blanket rule:
-   * VIEWER can read but never mutate (findings-log.md #24). */
-  private async authorizeRole(req: HotelScopedRequest): Promise<boolean> {
+  /** Resolves `req.role`, enforces the one documented blanket rule (VIEWER
+   * can read but never mutate, findings-log.md #24), then any route-level
+   * `@RequireRole(...)` metadata (findings-log.md #38). */
+  private async authorizeRole(
+    req: HotelScopedRequest,
+    context: ExecutionContext,
+  ): Promise<boolean> {
     req.role = await authorizeHotelAccess(
       this.prisma,
       req.supabaseUser.id,
       req.hotelId,
       req.method,
     );
+
+    const requiredRoles = this.reflector.getAllAndOverride<Role[] | undefined>(
+      REQUIRED_ROLES_KEY,
+      [context.getHandler(), context.getClass()],
+    );
+    if (requiredRoles?.length && !requiredRoles.includes(req.role)) {
+      throw new ForbiddenException({
+        error: {
+          code: 'FORBIDDEN_ROLE',
+          message: `This action requires one of: ${requiredRoles.join(', ')}.`,
+          requestId: req.supabaseUser.id,
+        },
+      });
+    }
     return true;
   }
 
