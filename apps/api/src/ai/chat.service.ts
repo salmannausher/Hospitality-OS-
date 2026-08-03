@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { ForbiddenException, Injectable, Logger } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import type { Prisma } from '@prisma/client';
 import type {
@@ -611,16 +611,30 @@ export class ChatService {
     },
   ): Promise<Array<{ role: string; content: string }>> {
     // Create the conversation on first turn, or reuse it on later turns — keyed
-    // on the id already sent in ack. RLS scopes this to the resolved hotel.
-    await tx.conversation.upsert({
+    // on the id already sent in ack. RLS scopes this to the resolved hotel;
+    // this additionally scopes it to the guest session that created it
+    // (findings-log.md #37) — a bare `upsert` would let any client that
+    // learns another guest's conversationId append to (and pull the history
+    // of) that guest's conversation.
+    const existing = await tx.conversation.findUnique({
       where: { id: params.conversationId },
-      create: {
-        id: params.conversationId,
-        hotelId: params.hotelId,
-        guestSessionId: params.sessionId,
-      },
-      update: {},
+      select: { guestSessionId: true },
     });
+    if (existing) {
+      if (existing.guestSessionId !== params.sessionId) {
+        throw new ForbiddenException(
+          'This conversation does not belong to the current session.',
+        );
+      }
+    } else {
+      await tx.conversation.create({
+        data: {
+          id: params.conversationId,
+          hotelId: params.hotelId,
+          guestSessionId: params.sessionId,
+        },
+      });
+    }
 
     // Prior turns (before this message) become the conversation context.
     const prior = await tx.message.findMany({

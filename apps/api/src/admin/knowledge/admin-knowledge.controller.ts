@@ -20,6 +20,7 @@ import {
 import { SupabaseAuthGuard } from '../../auth/supabase-auth.guard';
 import { HotelScopeGuard } from '../hotel-scope.guard';
 import { CurrentHotelId } from '../current-hotel-id.decorator';
+import { RequireRole } from '../require-role.decorator';
 
 const MAX_UPLOAD_BYTES = 20 * 1024 * 1024; // 20MB — a rate sheet PDF, not a data dump.
 const VALID_STATUSES: readonly DocumentStatusValue[] = [
@@ -47,9 +48,12 @@ const VALID_STATUSES: readonly DocumentStatusValue[] = [
 export class AdminKnowledgeController {
   constructor(private readonly ingestion: IngestionService) {}
 
-  /** Multipart upload OR `{ "sourceUrl": "..." }` for URL sync (API §3.2). */
+  /** Multipart upload OR `{ "sourceUrl": "..." }` for URL sync (API §3.2).
+   * Restricted to `HOTEL_ADMIN+` per API §1 (findings-log.md #38) — ingestion
+   * triggers model/embedding spend and, for URL sync, outbound fetches. */
   @Post('documents')
   @HttpCode(202)
+  @RequireRole('HOTEL_ADMIN', 'AGENCY_ADMIN', 'SUPER_ADMIN')
   @UseInterceptors(
     FileInterceptor('file', { limits: { fileSize: MAX_UPLOAD_BYTES } }),
   )

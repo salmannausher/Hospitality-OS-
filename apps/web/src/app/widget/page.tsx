@@ -33,12 +33,24 @@ import {
 
 const WIDGET_KEY = "wk_demo_bellevue"; // the seeded Bellevue demo key
 
+/** UX §4's worked example, one line per field — the second (and later) field
+ * ask has no server-pushed SSE event of its own (`nextField` from `POST
+ * /v1/chat/lead`'s response tells the client what to ask next, API §2.2), so
+ * the client owns this wording rather than the server re-sending it. */
+const LEAD_FOLLOWUP_QUESTIONS: Record<LeadField, string> = {
+  dates: "Wonderful — what dates are you considering?",
+  email: "And what's the best email to send it to?",
+  name: "And what name should I put this under?",
+  phone: "And what's the best number to reach you at?",
+};
+
 type Turn =
   | { kind: "guest"; text: string }
   | { kind: "concierge"; text: string; pending: boolean }
   | { kind: "cards"; cards: RecommendationCardEvent[] }
   | {
       kind: "leadPrompt";
+      id: string;
       promptId: string;
       question: string;
       field: LeadField;
@@ -121,6 +133,7 @@ export default function WidgetHarness() {
                 ...t,
                 {
                   kind: "leadPrompt",
+                  id: event.promptId,
                   promptId: event.promptId,
                   question: event.question,
                   field: event.field,
@@ -160,15 +173,15 @@ export default function WidgetHarness() {
     }
   }
 
-  function updateLeadTurn(promptId: string, patch: Partial<Extract<Turn, { kind: "leadPrompt" }>>) {
+  function updateLeadTurn(id: string, patch: Partial<Extract<Turn, { kind: "leadPrompt" }>>) {
     setTurns((t) =>
-      t.map((turn) => (turn.kind === "leadPrompt" && turn.promptId === promptId ? { ...turn, ...patch } : turn)),
+      t.map((turn) => (turn.kind === "leadPrompt" && turn.id === id ? { ...turn, ...patch } : turn)),
     );
   }
 
-  async function submitLead(promptId: string, field: LeadField, value: string | null, declined: boolean) {
+  async function submitLead(id: string, promptId: string, field: LeadField, value: string | null, declined: boolean) {
     if (!conversationId.current) return;
-    updateLeadTurn(promptId, { stage: "submitting" });
+    updateLeadTurn(id, { stage: "submitting" });
     try {
       const res = await submitLeadAnswer(WIDGET_KEY, {
         conversationId: conversationId.current,
@@ -178,14 +191,31 @@ export default function WidgetHarness() {
         consent: !declined,
         declined,
       });
-      updateLeadTurn(promptId, {
+      updateLeadTurn(id, {
         stage: "done",
         resultText: declined ? "No trouble at all." : "Got it — thank you.",
       });
-      void res;
+      // API §2.2: `nextField` means the multi-field ask isn't done — continue
+      // in the same conversational shape (a concierge line, then the next
+      // field's input) rather than stopping after the first field.
+      if (!declined && res.nextField) {
+        const nextField = res.nextField;
+        setTurns((t) => [
+          ...t,
+          { kind: "concierge", text: LEAD_FOLLOWUP_QUESTIONS[nextField], pending: false },
+          {
+            kind: "leadPrompt",
+            id: `${promptId}:${nextField}`,
+            promptId,
+            question: LEAD_FOLLOWUP_QUESTIONS[nextField],
+            field: nextField,
+            stage: "value",
+          },
+        ]);
+      }
     } catch (e) {
       setNotice(String((e as Error)?.message ?? e));
-      updateLeadTurn(promptId, { stage: "value" });
+      updateLeadTurn(id, { stage: "value" });
     }
   }
 
@@ -354,8 +384,8 @@ export default function WidgetHarness() {
                   <YesNoConfirm
                     key={i}
                     question={turn.question}
-                    onYes={() => updateLeadTurn(turn.promptId, { stage: "value" })}
-                    onNo={() => submitLead(turn.promptId, turn.field, null, true)}
+                    onYes={() => updateLeadTurn(turn.id, { stage: "value" })}
+                    onNo={() => submitLead(turn.id, turn.promptId, turn.field, null, true)}
                   />
                 );
               }
@@ -365,7 +395,7 @@ export default function WidgetHarness() {
                     key={i}
                     field={turn.field}
                     submitting={turn.stage === "submitting"}
-                    onSubmit={(value) => submitLead(turn.promptId, turn.field, value, false)}
+                    onSubmit={(value) => submitLead(turn.id, turn.promptId, turn.field, value, false)}
                   />
                 );
               }
