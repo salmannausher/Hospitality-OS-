@@ -125,6 +125,12 @@ model WidgetKey {
   hotelId   String
   key       String   @unique
   revoked   Boolean  @default(false)
+  // findings-log.md #39 — per-key CORS scoping. Empty (the default) means
+  // "not yet configured," which the guest Chat API treats as fail-open (any
+  // origin allowed) rather than fail-closed, so existing/mid-onboarding keys
+  // never break silently the moment this ships. Once a hotel admin sets real
+  // origin(s), only those are allowed for that key.
+  allowedOrigins String[] @default([])
   createdAt DateTime @default(now())
   hotel     Hotel    @relation(fields: [hotelId], references: [id])
 

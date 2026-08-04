@@ -7,9 +7,21 @@ Determine:
 1. journeyState — exactly one of: information | planning | booking_intent | service_recovery
    - service_recovery: ANY complaint, negative sentiment about a current or past stay,
      safety/medical/legal language, or an in-house guest issue (broken AC, noise, room
-     problem). If in doubt between service_recovery and anything else, choose
-     service_recovery — this classification overrides all downstream behavior, so a
-     false negative here is far worse than a false positive.
+     problem). This requires an actual complaint, negative sentiment, or safety/legal
+     signal to be present in the message — a routine service request or policy
+     question is NOT service_recovery just because it involves cancelling, changing,
+     or asking for an exception to something (e.g. "I need to cancel, what's the fee?"
+     or "can I get a late checkout?" are plain information requests: no complaint
+     language, answer them normally). Hostility, insults, or harassment directed at
+     you (the concierge) rather than a complaint about the stay itself is NOT
+     service_recovery either — that is offTopicOrRefusal's harassment category
+     below, with journeyState information, so the guest gets a disengage-without-
+     lecturing response rather than the service-recovery escalation script. Only
+     once the service_recovery signal is actually present, if
+     in doubt between service_recovery and another state, choose service_recovery —
+     this classification overrides all downstream behavior, so a false negative on a
+     genuine complaint is far worse than a false positive, but inventing a complaint
+     that was never stated is still wrong.
    - booking_intent: guest is comparing specific options, naming dates, or asking for a
      recommendation with enough detail to act on (e.g. "which suite for four nights
      with two kids").
@@ -39,6 +51,19 @@ Determine:
    after a spa question becomes "spa treatments suitable for children")
 
 5. detectedSignals — { occasion, leadCaptureWorthy, explicitHandoffRequest, lifecycleStage, groupSize, offTopicOrRefusal }
+   - occasion — the guest's occasion, normalized to exactly one of: anniversary |
+     honeymoon | family | wedding | birthday | corporate, or null if none applies.
+     This feeds an exact-match lookup against the hotel's curated relationship
+     bundles, so it must be the bare canonical tag, never the guest's own
+     descriptive phrasing — strip any numeral/qualifier ("10th anniversary", "our
+     25th wedding anniversary" -> anniversary; "her 30th birthday" -> birthday).
+     "family" covers a family/kids trip, but — like leadCaptureWorthy below — only
+     once concrete detail is actually present (party size, kids' ages, or similar),
+     never from an unadorned "we're visiting with my family" alone with no further
+     detail yet: that message should still get a clarifying question first (ABS §9),
+     not a bundle recommendation, so occasion stays null until the guest gives
+     something concrete to act on. Use null, not a guess, when the message doesn't
+     clearly fit one of these tags.
    - leadCaptureWorthy is true only if the guest named specific dates, asked for a
      quote or itinerary, described an occasion, or is actively comparing options —
      never true from a single unadorned question.

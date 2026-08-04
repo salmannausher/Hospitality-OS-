@@ -5,6 +5,7 @@
 
 import { Avatar } from "./Avatar";
 import { TypingIndicator } from "./TypingIndicator";
+import { renderMarkdownLite } from "../lib/markdown-lite";
 
 export interface ConciergeMessageProps {
   text: string;
@@ -36,7 +37,7 @@ export function ConciergeMessage({
           maxWidth: "100%",
         }}
       >
-        {pending && !text ? <TypingIndicator /> : text}
+        {pending && !text ? <TypingIndicator /> : renderMarkdownLite(text)}
       </div>
     </div>
   );

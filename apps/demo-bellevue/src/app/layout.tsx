@@ -47,7 +47,7 @@ export default function RootLayout({
             public/widget.js changes to prevent a stale cached bundle from
             surviving a rebuild (findings-log.md #35). */}
         <Script
-          src="/widget.js?v=20260801-geometry-35"
+          src="/widget.js?v=20260803-markdown-46"
           data-widget-key="wk_demo_bellevue"
           strategy="afterInteractive"
         />

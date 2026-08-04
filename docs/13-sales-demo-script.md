@@ -41,7 +41,7 @@ Ten minutes, using **Bellevue Hotel** as the example (the same example threaded 
 
 > "Notice it didn't pop up immediately demanding attention. It waits, the way a concierge would."
 
-**Beat 2 — The quick-start moment (1 minute).** Open the widget. Tap **"Romantic Escape."** This is [Playbook G-05](04-conversation-playbook.md) — the anniversary relationship bundle. Watch it return one coherent recommendation (Ocean View Suite + rooftop dinner + couples massage), not three separate answers.
+**Beat 2 — The quick-start moment (1 minute).** Open the widget and type **"We're celebrating our anniversary."** (UX §2 describes a one-tap "Romantic Escape" quick-start chip that would trigger this same path — it's spec'd but not yet built, findings-log #45, so type the line instead until that chip exists.) This is [Playbook G-05](04-conversation-playbook.md) — the anniversary relationship bundle. Watch it return one coherent recommendation (Ocean View Suite + rooftop dinner + couples massage), not three separate answers.
 
 > "It didn't just search documents and return a list. It knows an anniversary, an ocean-view suite, and a couples massage are the same recommendation — because someone on the hotel's team curated that pairing once, and every guest with that occasion gets it."
 

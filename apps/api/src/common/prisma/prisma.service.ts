@@ -103,6 +103,26 @@ export class PrismaService
   }
 
   /**
+   * Same lookup as `resolveWidgetKey`, plus the key's `allowedOrigins`
+   * (findings-log.md #39 — per-key CORS scoping). A separate SECURITY
+   * DEFINER function (migration 13_widget_key_origins) rather than changing
+   * `resolveWidgetKey`'s return shape, since existing callers (this method
+   * included, plus one-off scripts) depend on its plain-string return.
+   */
+  async resolveWidgetKeyFull(
+    key: string,
+  ): Promise<{ hotelId: string; allowedOrigins: string[] } | null> {
+    const rows = await this.$queryRaw<
+      Array<{ hotelId: string | null; allowedOrigins: string[] | null }>
+    >`
+      SELECT "hotelId", "allowedOrigins" FROM resolve_widget_key_full(${key})
+    `;
+    const row = rows[0];
+    if (!row?.hotelId) return null;
+    return { hotelId: row.hotelId, allowedOrigins: row.allowedOrigins ?? [] };
+  }
+
+  /**
    * Resolve the Hotel rows (id/name/slug) a user has a HotelMembership to.
    * Needed for GET /v1/admin/session (API §3.1), which runs with NO tenant
    * context — an Agency Admin's memberships legitimately span hotels, and this
