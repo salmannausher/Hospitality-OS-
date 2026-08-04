@@ -79,7 +79,15 @@ export function RecommendationCard({ title, hook, imageUrl, linkUrl }: Recommend
  * grid/list of many options at once" is the explicit Don't). */
 export function RecommendationCardRow({ cards }: { cards: RecommendationCardData[] }) {
   return (
-    <div style={{ display: "flex", gap: "var(--space-3)", overflowX: "auto", paddingBottom: 2 }}>
+    <div
+      style={{
+        display: "flex",
+        alignItems: "flex-start",
+        gap: "var(--space-3)",
+        overflowX: "auto",
+        paddingBottom: 2,
+      }}
+    >
       {cards.map((card) => (
         <RecommendationCard key={card.entityId} {...card} />
       ))}

@@ -3,7 +3,7 @@
 // via `data-hospitality-widget`, so every component below reads var(--...)
 // without knowing which hotel or preset it's rendering for.
 
-import type { CSSProperties, ReactNode } from "react";
+import { Children, type CSSProperties, type ReactNode } from "react";
 import { resolveBrandTokens, type BrandInput } from "../tokens";
 import { Avatar } from "./Avatar";
 
@@ -140,7 +140,21 @@ export function WidgetShell({
           gap: "var(--space-4)",
         }}
       >
-        {children}
+        {/* Each turn (message, RecommendationCardRow, YesNoConfirm, ...) needs
+         * flexShrink: 0 here — without it, a flex column child defaults to
+         * flexShrink: 1, so once total thread content exceeds this panel's
+         * fixed height, the browser SHRINKS every child proportionally to
+         * fit instead of leaving them at natural height and actually
+         * scrolling (which overflowY: auto is here to do). A
+         * RecommendationCardRow's real ~150-200px got compressed to ~20px
+         * this way — its cards rendered fully in the DOM, just squeezed to
+         * a sliver, easy to mistake for a stray divider line rather than a
+         * collapsed card (findings-log.md #49). */}
+        {Children.toArray(children).map((child, i) => (
+          <div key={i} style={{ flexShrink: 0 }}>
+            {child}
+          </div>
+        ))}
       </div>
 
       {ctaArea ? (
