@@ -53,7 +53,7 @@ Ten minutes, using **Bellevue Hotel** as the example (the same example threaded 
 
 > "This is the part that matters more than the chat widget. Every time a guest asks something the concierge doesn't have a confident answer for, it tells the hotel exactly what to upload next — instead of just failing quietly. This is also why the relationship doesn't end at launch: there's always a next thing to improve, which is the recurring part of recurring revenue."
 
-**Beat 5 — Prove it's every hotel, not just Bellevue (1–2 minutes).** Open **Brand Settings**, switch the tone preset and accent color live, show the widget preview update instantly.
+**Beat 5 — Prove it's every hotel, not just Bellevue (1–2 minutes).** Open **Brand Settings**, switch the tone preset and accent color live, show the widget preview update instantly. That "instantly" is the Brand Settings page's own live preview (local state, no network round trip) — if you also want to show the *actual* guest widget on `demo-bellevue` reflecting the change, hard-reload that tab (or use a fresh one) after saving: `bootstrap`'s `Cache-Control: max-age=300` (API §2.4, deliberate — keeps the widget fast on a hotel's real site) means an already-loaded tab can show the old color for up to 5 minutes otherwise.
 
 > "This is the same product for Rosewood, for EDITION, for Waldorf — the concierge's voice and look change, the underlying intelligence doesn't. You don't rebuild this per client; you configure it."
 
