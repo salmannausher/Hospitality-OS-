@@ -1,8 +1,16 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { generateObject, streamText } from 'ai';
 import { z } from 'zod';
 import type { ClassifierOutput } from '@hospitality/types';
 import { PromptsService } from './prompts.service';
+
+// 'ai' (Vercel AI SDK) ships ESM-only; NestJS's CommonJS build output can't
+// `require()` it directly under Vercel's Node runtime (ERR_REQUIRE_ESM), so
+// it's loaded via a cached dynamic import instead.
+let aiModulePromise: Promise<typeof import('ai')> | null = null;
+function loadAi(): Promise<typeof import('ai')> {
+  aiModulePromise ??= import('ai');
+  return aiModulePromise;
+}
 
 /**
  * The two Claude calls, routed through the Vercel AI Gateway (Architecture §7,
@@ -136,6 +144,7 @@ export class GatewayService {
     history: string,
   ): Promise<{ classification: ClassifierOutput; degraded: boolean }> {
     try {
+      const { generateObject } = await loadAi();
       const { object } = await generateObject({
         model: CLASSIFIER_MODEL,
         schema: classifierSchema,
@@ -163,10 +172,11 @@ export class GatewayService {
    * Low-confidence path (AI Engine §5) — that returns the honest fallback
    * without a generation call.
    */
-  streamGeneration(input: {
+  async streamGeneration(input: {
     systemPrompt: string;
     message: string;
-  }): GenerationStream {
+  }): Promise<GenerationStream> {
+    const { streamText } = await loadAi();
     let streamError: unknown = null;
     const result = streamText({
       model: GENERATION_MODEL,
@@ -191,6 +201,7 @@ export class GatewayService {
    * ungrounded content.
    */
   async extractEntities(text: string): Promise<ExtractionResult> {
+    const { generateObject } = await loadAi();
     const { object } = await generateObject({
       model: EXTRACTION_MODEL,
       schema: extractionSchema,

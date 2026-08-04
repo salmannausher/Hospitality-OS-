@@ -3,7 +3,7 @@
   "crons": [
     {
       "path": "/internal/ingestion/tick",
-      "schedule": "*/5 * * * *"
+      "schedule": "0 0 * * *"
     }
   ]
 }

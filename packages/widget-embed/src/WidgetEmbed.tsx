@@ -14,7 +14,7 @@
 //     real fixed corner position and the docs/08 §11 mobile full-screen
 //     takeover, via WidgetShell's `fullscreen` prop.
 
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import {
   getBootstrap,
   sendChatMessage,
@@ -124,8 +124,41 @@ export function WidgetEmbed({ widgetKey }: { widgetKey: string }) {
   const sessionId = useRef<string>("");
   const conversationId = useRef<string | null>(null);
   const isMobile = useIsMobile();
+  const wrapperRef = useRef<HTMLDivElement>(null);
 
   useGoogleFont(boot?.brand.fontFamily);
+
+  // Explicit px strings, not bare numbers — findings-log.md #30: bare numeric
+  // values silently produced an empty `right`/`bottom` on this element (this
+  // bundle's react-dom didn't unit-append them the way it normally would),
+  // leaving the whole widget rendered in normal document flow instead of
+  // pinned to the viewport corner.
+  const wrapperStyle: CSSProperties = isMobile
+    ? { position: "fixed", inset: open ? "0px" : "auto", right: open ? "0px" : "16px", bottom: open ? "0px" : "16px", zIndex: 2147483000 }
+    : {
+        position: "fixed",
+        right: "16px",
+        bottom: "16px",
+        width: DESKTOP_PANEL_WIDTH,
+        display: "flex",
+        justifyContent: "flex-end",
+        zIndex: 2147483000,
+      };
+
+  // findings-log.md #49: React's own commit sometimes silently drops `right`/
+  // `bottom` (and the mobile `inset` shorthand's equivalents) from this node's
+  // inline style despite them being present in the element it committed —
+  // reproduced even in total isolation (no host-page React involved), so this
+  // reasserts the intended style imperatively as a guaranteed-correct backstop
+  // regardless of the still-unconfirmed underlying cause.
+  useLayoutEffect(() => {
+    const el = wrapperRef.current;
+    if (!el) return;
+    for (const [key, value] of Object.entries(wrapperStyle)) {
+      if (value == null) continue;
+      (el.style as unknown as Record<string, string>)[key] = String(value);
+    }
+  });
 
   useEffect(() => {
     const onOpenRequest = () => {
@@ -313,25 +346,8 @@ export function WidgetEmbed({ widgetKey }: { widgetKey: string }) {
     displayFontStack: boot.brand.fontFamily ? `"${boot.brand.fontFamily}", serif` : null,
   };
 
-  // Explicit px strings, not bare numbers — findings-log.md #30: bare numeric
-  // values silently produced an empty `right`/`bottom` on this element (this
-  // bundle's react-dom didn't unit-append them the way it normally would),
-  // leaving the whole widget rendered in normal document flow instead of
-  // pinned to the viewport corner.
-  const wrapperStyle: CSSProperties = isMobile
-    ? { position: "fixed", inset: open ? "0px" : "auto", right: open ? "0px" : "16px", bottom: open ? "0px" : "16px", zIndex: 2147483000 }
-    : {
-        position: "fixed",
-        right: "16px",
-        bottom: "16px",
-        width: DESKTOP_PANEL_WIDTH,
-        display: "flex",
-        justifyContent: "flex-end",
-        zIndex: 2147483000,
-      };
-
   return (
-    <div style={wrapperStyle}>
+    <div ref={wrapperRef} style={wrapperStyle}>
       {open ? (
         <WidgetShell
           conciergeName={boot.hotel.conciergeName}

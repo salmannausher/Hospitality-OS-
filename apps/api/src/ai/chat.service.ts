@@ -390,7 +390,7 @@ export class ChatService {
           persona: classification.persona,
           bundleCards,
         });
-        const result = this.gateway.streamGeneration({
+        const result = await this.gateway.streamGeneration({
           systemPrompt,
           message: params.message,
         });
