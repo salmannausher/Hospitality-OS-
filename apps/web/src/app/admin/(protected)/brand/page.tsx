@@ -26,6 +26,8 @@ import {
   type ContrastFailureDetail,
   type UpdateBrandSettingsRequest,
 } from "@hospitality/sdk";
+import { ConciergeMessage, SuggestedChip, WidgetShell } from "@hospitality/ui";
+import "@hospitality/ui/tokens.css";
 
 const TONE_PRESETS: BrandSettingsResponse["tonePreset"][] = [
   "CLASSIC_LUXURY",
@@ -108,43 +110,52 @@ function ColorField({
   );
 }
 
+/**
+ * findings-log.md #51 — this used to hand-roll its own preview markup,
+ * which drifted from packages/ui's actual "accent, not background" rule
+ * (UI Design System §3) into a full-bleed colored header the real widget
+ * never renders. Composing the real WidgetShell/ConciergeMessage/
+ * SuggestedChip components here means this preview can't drift from the
+ * real widget again — any future style change to those components shows up
+ * here automatically.
+ */
 function WidgetPreview({ form }: { form: UpdateBrandSettingsRequest }) {
-  const accent = form.primaryColor || "#2F4A3C";
   return (
-    <div
-      className="w-full max-w-xs overflow-hidden rounded-2xl border border-line bg-white shadow-sm"
-      style={{ fontFamily: form.fontFamily || undefined }}
+    <WidgetShell
+      conciergeName={form.conciergeName || "Concierge"}
+      hotelName=""
+      brand={{
+        tonePreset: form.tonePreset ?? "MODERN_LUXURY",
+        primaryColor: form.primaryColor,
+        secondaryColor: form.secondaryColor,
+        displayFontStack: form.fontFamily,
+      }}
+      logoUrl={form.logoUrl}
+      inputBar={
+        <div
+          style={{
+            border: "1px solid var(--neutral-300)",
+            borderRadius: "var(--radius-sm)",
+            padding: "var(--space-2) var(--space-3)",
+            fontSize: "var(--type-sm)",
+            color: "var(--neutral-600)",
+          }}
+        >
+          Ask the concierge…
+        </div>
+      }
     >
-      <div className="flex items-center justify-between px-4 py-3" style={{ backgroundColor: accent }}>
-        <div className="flex items-center gap-2">
-          {form.logoUrl && (
-            // eslint-disable-next-line @next/next/no-img-element -- admin-provided arbitrary URL, live preview only
-            <img src={form.logoUrl} alt="" className="h-5 w-5 rounded-full bg-white/20 object-contain" />
-          )}
-          <span className="text-sm font-semibold text-white">{form.conciergeName || "Concierge"}</span>
-        </div>
-        <span className="text-white/70">×</span>
+      <ConciergeMessage
+        text={form.greeting || "Welcome! How may I help you today?"}
+        showAvatar={false}
+        conciergeInitial={(form.conciergeName || "C").slice(0, 1)}
+      />
+      <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--space-2)" }}>
+        {["What time is breakfast?", "Do you allow pets?"].map((q) => (
+          <SuggestedChip key={q} label={q} onClick={() => {}} disabled />
+        ))}
       </div>
-      <div className="space-y-3 bg-parchment/20 p-4">
-        <div className="max-w-[85%] rounded-xl rounded-tl-sm bg-white p-3 text-sm text-ink shadow-sm">
-          {form.greeting || "Welcome! How may I help you today?"}
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {["What time is breakfast?", "Do you allow pets?"].map((q) => (
-            <span
-              key={q}
-              className="rounded-full border px-3 py-1.5 text-xs"
-              style={{ borderColor: accent, color: accent }}
-            >
-              {q}
-            </span>
-          ))}
-        </div>
-      </div>
-      <div className="border-t border-line px-4 py-2 text-center text-[10px] tracking-wide text-mist uppercase">
-        Powered by AI OS
-      </div>
-    </div>
+    </WidgetShell>
   );
 }
 
