@@ -20,6 +20,9 @@ import {
   type LeadSummary,
 } from "@hospitality/sdk";
 import { PlusIcon, SearchIcon } from "../../icons";
+import { Pagination } from "../../pagination";
+
+const PAGE_SIZE = 10;
 
 const LEAD_STATUSES: LeadStatus[] = ["NEW", "CONTACTED", "QUALIFIED", "CONVERTED", "LOST"];
 
@@ -241,6 +244,10 @@ export default function LeadsInboxPage() {
   const [search, setSearch] = useState("");
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [cursor, setCursor] = useState<string | undefined>(undefined);
+  const [cursorStack, setCursorStack] = useState<(string | undefined)[]>([]);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [pageLoading, setPageLoading] = useState(false);
 
   useEffect(() => {
     if (!accessToken) return;
@@ -248,19 +255,40 @@ export default function LeadsInboxPage() {
     listLeads(accessToken, {
       hotelId,
       status: statusFilter === "any" ? undefined : statusFilter,
+      cursor,
+      limit: PAGE_SIZE,
     })
-      .then(({ items }) => {
+      .then(({ items, nextCursor: next }) => {
         if (cancelled) return;
         setLeads(items);
+        setNextCursor(next);
         setError(null);
+        setPageLoading(false);
       })
       .catch((err) => {
-        if (!cancelled) setError((err as Error).message);
+        if (cancelled) return;
+        setError((err as Error).message);
+        setPageLoading(false);
       });
     return () => {
       cancelled = true;
     };
-  }, [accessToken, hotelId, statusFilter, refreshKey]);
+  }, [accessToken, hotelId, statusFilter, refreshKey, cursor]);
+
+  function goNext() {
+    if (!nextCursor) return;
+    setPageLoading(true);
+    setCursorStack((prev) => [...prev, cursor]);
+    setCursor(nextCursor);
+  }
+
+  function goPrev() {
+    if (cursorStack.length === 0) return;
+    setPageLoading(true);
+    const prevCursor = cursorStack[cursorStack.length - 1];
+    setCursorStack((prev) => prev.slice(0, -1));
+    setCursor(prevCursor);
+  }
 
   const visibleLeads = useMemo(() => {
     if (!leads) return leads;
@@ -286,14 +314,24 @@ export default function LeadsInboxPage() {
         <p className="mt-2 text-sm text-ink-soft">Manage and track prospective guest inquiries.</p>
       </div>
 
-      <ManualLeadForm onCreated={() => setRefreshKey((k) => k + 1)} />
+      <ManualLeadForm
+        onCreated={() => {
+          setCursor(undefined);
+          setCursorStack([]);
+          setRefreshKey((k) => k + 1);
+        }}
+      />
 
       <div className="flex flex-wrap items-center justify-between gap-4">
         <label className="flex items-center gap-2 text-sm text-ink-soft">
           Status
           <select
             value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
+            onChange={(e) => {
+              setStatusFilter(e.target.value as StatusFilter);
+              setCursor(undefined);
+              setCursorStack([]);
+            }}
             className={selectClass}
           >
             <option value="any">Any</option>
@@ -384,6 +422,16 @@ export default function LeadsInboxPage() {
               ))}
             </tbody>
           </table>
+        )}
+        {visibleLeads !== null && visibleLeads.length > 0 && (
+          <Pagination
+            count={visibleLeads.length}
+            hasPrev={cursorStack.length > 0}
+            hasNext={!!nextCursor}
+            loading={pageLoading}
+            onPrev={goPrev}
+            onNext={goNext}
+          />
         )}
       </div>
     </div>

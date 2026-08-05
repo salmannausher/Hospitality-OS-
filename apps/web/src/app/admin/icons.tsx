@@ -132,6 +132,20 @@ export const UsersIcon = base(
 
 export const ArrowRightIcon = base(<path d="M5 12h14M13 6l6 6-6 6" />);
 
+export const ArrowLeftIcon = base(<path d="M19 12H5M11 6l-6 6 6 6" />);
+
+export const SpinnerIcon = ({ className }: IconProps) => (
+  <svg viewBox="0 0 24 24" fill="none" className={className} aria-hidden="true">
+    <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="2" opacity="0.2" />
+    <path
+      d="M21 12a9 9 0 00-9-9"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+    />
+  </svg>
+);
+
 export const LogoutIcon = base(
   <>
     <path d="M9 3H5a2 2 0 00-2 2v14a2 2 0 002 2h4" />
