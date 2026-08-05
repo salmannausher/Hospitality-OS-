@@ -33,7 +33,20 @@ export function Launcher({ label, delayMs, conciergeInitial, logoUrl, brand, onO
   }, [delayMs]);
 
   return (
-    <div data-hospitality-widget style={{ ...resolveBrandTokens(brand), display: "inline-block" }}>
+    // background: "transparent" overrides tokens.css's shared
+    // `[data-hospitality-widget] { background: var(--neutral-0) }` rule
+    // (inline style always wins over an external attribute selector).
+    // Without it, this wrapper — sized to the button via inline-block, with
+    // no border-radius of its own — paints a sharp-cornered neutral-0 box
+    // directly behind the button's rounded, bordered pill. Same fill color
+    // on both, so it doesn't look like a color mismatch — it looks exactly
+    // like unclean/jagged corners on the pill itself. WidgetShell doesn't
+    // have this bug because it puts the attribute on the SAME element that
+    // already has its own matching border-radius + overflow: hidden.
+    <div
+      data-hospitality-widget
+      style={{ ...resolveBrandTokens(brand), display: "inline-block", background: "transparent" }}
+    >
       <AnimatePresence>
         {shown ? (
           <motion.button

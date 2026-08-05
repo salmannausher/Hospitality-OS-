@@ -34,9 +34,14 @@ export function Hero() {
           sizes="100vw"
           className="object-[center_70%]"
         />
+        {/* The sand in this particular photo is bright, so a light 35% wash
+            faded fully transparent by mid-frame — leaving the sand/cream
+            text with almost no contrast right where it sits. Darker, and
+            held further up the frame, so the text always has a real base to
+            read against regardless of how bright a given hero photo is. */}
         <div
           aria-hidden
-          className="absolute inset-0 bg-gradient-to-t from-ink/35 via-transparent to-transparent"
+          className="absolute inset-0 bg-gradient-to-t from-ink/70 via-ink/25 via-40% to-transparent"
         />
         <div
           aria-hidden
@@ -44,7 +49,10 @@ export function Hero() {
         />
       </motion.div>
 
-      <div className="relative mx-auto w-full max-w-7xl px-6 pb-20 pt-40 md:px-10 md:pb-28">
+      {/* text-shadow is inherited, so setting it once here covers the kicker,
+          h1, and subtitle below — a legibility floor that holds even if this
+          hero photo is ever swapped for one with a brighter lower third. */}
+      <div className="relative mx-auto w-full max-w-7xl px-6 pb-20 pt-40 text-shadow-[0_2px_20px_rgba(20,18,15,0.5)] md:px-10 md:pb-28">
         <motion.p
           {...fade(0.3)}
           className="text-[0.72rem] font-medium uppercase tracking-[0.3em] text-sand"
