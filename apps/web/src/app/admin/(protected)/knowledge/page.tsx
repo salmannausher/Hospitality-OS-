@@ -38,7 +38,15 @@ import {
   type KnowledgeChunkPreview,
   type KnowledgeDocumentSummary,
 } from "@hospitality/sdk";
+import type { DocumentStatus } from "@hospitality/types";
 import { BookIcon, PlugIcon, SearchIcon, SparkIcon } from "../../icons";
+import { Pagination } from "../../pagination";
+
+const PAGE_SIZE = 10;
+// "Knowledge Health" needs to reflect the WHOLE knowledge base, not just the
+// current paginated page — there's no total-count endpoint to derive it from
+// otherwise, so this fetches a separate, larger snapshot just for the stats.
+const HEALTH_SNAPSHOT_LIMIT = 200;
 
 // UX §9: "progress labels: 'Reading…' → 'Chunking…' → 'Embedding…' → 'Ready' —
 // plain-language status, not raw pipeline terminology."
@@ -74,6 +82,7 @@ export default function KnowledgeBasePage() {
   const hotelId = sessionData?.hotelMemberships[0]?.hotelId;
 
   const [documents, setDocuments] = useState<KnowledgeDocumentSummary[] | null>(null);
+  const [healthDocs, setHealthDocs] = useState<KnowledgeDocumentSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [dragActive, setDragActive] = useState(false);
@@ -83,34 +92,91 @@ export default function KnowledgeBasePage() {
   const [chunks, setChunks] = useState<KnowledgeChunkPreview[] | null>(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("any");
+  const [cursor, setCursor] = useState<string | undefined>(undefined);
+  const [cursorStack, setCursorStack] = useState<(string | undefined)[]>([]);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [pageLoading, setPageLoading] = useState(false);
+
+  const refreshHealth = useCallback(async () => {
+    if (!accessToken) return;
+    try {
+      const { items } = await listKnowledgeDocuments(accessToken, {
+        hotelId,
+        limit: HEALTH_SNAPSHOT_LIMIT,
+      });
+      setHealthDocs(items);
+    } catch {
+      // Health panel is supplementary — the main list's error banner covers
+      // the user-facing failure case; don't double-report here.
+    }
+  }, [accessToken, hotelId]);
 
   const refresh = useCallback(async () => {
     if (!accessToken) return;
     try {
-      const { items } = await listKnowledgeDocuments(accessToken, { hotelId });
+      const { items, nextCursor: next } = await listKnowledgeDocuments(accessToken, {
+        hotelId,
+        status: statusFilter === "any" ? undefined : (statusFilter as DocumentStatus),
+        cursor,
+        limit: PAGE_SIZE,
+      });
       setDocuments(items);
+      setNextCursor(next);
       setError(null);
     } catch (err) {
       setError((err as Error).message);
     }
-  }, [accessToken, hotelId]);
+    void refreshHealth();
+  }, [accessToken, hotelId, statusFilter, cursor, refreshHealth]);
 
   useEffect(() => {
     if (!accessToken) return;
     let cancelled = false;
-    listKnowledgeDocuments(accessToken, { hotelId })
-      .then(({ items }) => {
+    listKnowledgeDocuments(accessToken, {
+      hotelId,
+      status: statusFilter === "any" ? undefined : (statusFilter as DocumentStatus),
+      cursor,
+      limit: PAGE_SIZE,
+    })
+      .then(({ items, nextCursor: next }) => {
         if (cancelled) return;
         setDocuments(items);
+        setNextCursor(next);
         setError(null);
+        setPageLoading(false);
       })
       .catch((err) => {
-        if (!cancelled) setError((err as Error).message);
+        if (cancelled) return;
+        setError((err as Error).message);
+        setPageLoading(false);
+      });
+    listKnowledgeDocuments(accessToken, { hotelId, limit: HEALTH_SNAPSHOT_LIMIT })
+      .then(({ items }) => {
+        if (!cancelled) setHealthDocs(items);
+      })
+      .catch(() => {
+        // Health panel is supplementary — the main list's error banner covers
+        // the user-facing failure case; don't double-report here.
       });
     return () => {
       cancelled = true;
     };
-  }, [accessToken, hotelId]);
+  }, [accessToken, hotelId, statusFilter, cursor]);
+
+  function goNext() {
+    if (!nextCursor) return;
+    setPageLoading(true);
+    setCursorStack((prev) => [...prev, cursor]);
+    setCursor(nextCursor);
+  }
+
+  function goPrev() {
+    if (cursorStack.length === 0) return;
+    setPageLoading(true);
+    const prevCursor = cursorStack[cursorStack.length - 1];
+    setCursorStack((prev) => prev.slice(0, -1));
+    setCursor(prevCursor);
+  }
 
   // While anything is actively processing, poll the list (to catch the final
   // status) and each in-flight document's per-stage status (for the
@@ -145,6 +211,8 @@ export default function KnowledgeBasePage() {
     setError(null);
     try {
       await uploadKnowledgeDocument(accessToken, { file, hotelId });
+      setCursor(undefined);
+      setCursorStack([]);
       await refresh();
     } catch (err) {
       setError((err as Error).message);
@@ -200,21 +268,26 @@ export default function KnowledgeBasePage() {
     }
   }
 
+  // Status is now a real server-side filter (paginating a client-only filter
+  // over a single page would hide most matches) — only the free-text search
+  // stays client-side, since no search endpoint exists to back it.
   const visibleDocuments = useMemo(() => {
     if (!documents) return documents;
-    return documents.filter((doc) => {
-      if (statusFilter !== "any" && doc.status !== statusFilter) return false;
-      const q = search.trim().toLowerCase();
-      if (!q) return true;
-      return doc.filename.toLowerCase().includes(q) || (doc.sourceUrl ?? "").toLowerCase().includes(q);
-    });
-  }, [documents, search, statusFilter]);
+    const q = search.trim().toLowerCase();
+    if (!q) return documents;
+    return documents.filter(
+      (doc) =>
+        doc.filename.toLowerCase().includes(q) || (doc.sourceUrl ?? "").toLowerCase().includes(q),
+    );
+  }, [documents, search]);
 
+  // Computed from the separate, larger healthDocs snapshot, not the current
+  // page — "Knowledge Health" describes the whole knowledge base.
   const needsAttentionCount =
-    documents?.filter((d) => d.status === "NEEDS_REVIEW" || d.status === "FAILED").length ?? 0;
+    healthDocs?.filter((d) => d.status === "NEEDS_REVIEW" || d.status === "FAILED").length ?? 0;
   const indexCoveragePct =
-    documents && documents.length > 0
-      ? Math.round((documents.filter((d) => d.status === "INDEXED").length / documents.length) * 100)
+    healthDocs && healthDocs.length > 0
+      ? Math.round((healthDocs.filter((d) => d.status === "INDEXED").length / healthDocs.length) * 100)
       : null;
 
   return (
@@ -313,7 +386,11 @@ export default function KnowledgeBasePage() {
               </div>
               <select
                 value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
+                onChange={(e) => {
+                  setStatusFilter(e.target.value as StatusFilter);
+                  setCursor(undefined);
+                  setCursorStack([]);
+                }}
                 className={selectClass}
               >
                 <option value="any">All statuses</option>
@@ -412,6 +489,16 @@ export default function KnowledgeBasePage() {
                   })}
                 </tbody>
               </table>
+            )}
+            {visibleDocuments !== null && visibleDocuments.length > 0 && (
+              <Pagination
+                count={visibleDocuments.length}
+                hasPrev={cursorStack.length > 0}
+                hasNext={!!nextCursor}
+                loading={pageLoading}
+                onPrev={goPrev}
+                onNext={goNext}
+              />
             )}
           </div>
         </div>

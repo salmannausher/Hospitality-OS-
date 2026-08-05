@@ -23,6 +23,9 @@ import {
   type QAScoreInput,
 } from "@hospitality/sdk";
 import { domainLabel } from "../../domain-labels";
+import { Pagination } from "../../pagination";
+
+const PAGE_SIZE = 10;
 
 const QA_DIMENSIONS: Array<{ key: keyof QAScoreInput; label: string }> = [
   { key: "grounding", label: "Grounding" },
@@ -213,6 +216,10 @@ export default function ConversationsPage() {
   const [leadFilter, setLeadFilter] = useState<LeadFilter>("any");
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<ConversationDetail | null>(null);
+  const [cursor, setCursor] = useState<string | undefined>(undefined);
+  const [cursorStack, setCursorStack] = useState<(string | undefined)[]>([]);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [pageLoading, setPageLoading] = useState(false);
 
   useEffect(() => {
     if (!accessToken) return;
@@ -221,19 +228,40 @@ export default function ConversationsPage() {
       hotelId,
       escalated: escalatedFilter === "any" ? undefined : escalatedFilter === "true",
       hasLead: leadFilter === "any" ? undefined : leadFilter === "true",
+      cursor,
+      limit: PAGE_SIZE,
     })
-      .then(({ items }) => {
+      .then(({ items, nextCursor: next }) => {
         if (cancelled) return;
         setConversations(items);
+        setNextCursor(next);
         setError(null);
+        setPageLoading(false);
       })
       .catch((err) => {
-        if (!cancelled) setError((err as Error).message);
+        if (cancelled) return;
+        setError((err as Error).message);
+        setPageLoading(false);
       });
     return () => {
       cancelled = true;
     };
-  }, [accessToken, hotelId, escalatedFilter, leadFilter]);
+  }, [accessToken, hotelId, escalatedFilter, leadFilter, cursor]);
+
+  function goNext() {
+    if (!nextCursor) return;
+    setPageLoading(true);
+    setCursorStack((prev) => [...prev, cursor]);
+    setCursor(nextCursor);
+  }
+
+  function goPrev() {
+    if (cursorStack.length === 0) return;
+    setPageLoading(true);
+    const prevCursor = cursorStack[cursorStack.length - 1];
+    setCursorStack((prev) => prev.slice(0, -1));
+    setCursor(prevCursor);
+  }
 
   const loadDetail = useCallback(
     async (conversationId: string) => {
@@ -274,7 +302,11 @@ export default function ConversationsPage() {
           Escalated
           <select
             value={escalatedFilter}
-            onChange={(e) => setEscalatedFilter(e.target.value as EscalatedFilter)}
+            onChange={(e) => {
+              setEscalatedFilter(e.target.value as EscalatedFilter);
+              setCursor(undefined);
+              setCursorStack([]);
+            }}
             className={selectClass}
           >
             <option value="any">Any</option>
@@ -286,7 +318,11 @@ export default function ConversationsPage() {
           Has lead
           <select
             value={leadFilter}
-            onChange={(e) => setLeadFilter(e.target.value as LeadFilter)}
+            onChange={(e) => {
+              setLeadFilter(e.target.value as LeadFilter);
+              setCursor(undefined);
+              setCursorStack([]);
+            }}
             className={selectClass}
           >
             <option value="any">Any</option>
@@ -406,6 +442,16 @@ export default function ConversationsPage() {
               ))}
             </tbody>
           </table>
+        )}
+        {conversations !== null && conversations.length > 0 && (
+          <Pagination
+            count={conversations.length}
+            hasPrev={cursorStack.length > 0}
+            hasNext={!!nextCursor}
+            loading={pageLoading}
+            onPrev={goPrev}
+            onNext={goNext}
+          />
         )}
       </div>
     </div>

@@ -21,6 +21,9 @@ import {
   type NotificationSummary,
 } from "@hospitality/sdk";
 import { AlertIcon, BellIcon, BookIcon, LeadsIcon } from "../../icons";
+import { Pagination } from "../../pagination";
+
+const PAGE_SIZE = 10;
 
 const STATUS_FILTERS: { label: string; value: "any" | NotificationStatus }[] = [
   { label: "Any", value: "any" },
@@ -66,10 +69,12 @@ export default function NotificationsPage() {
   const hotelId = sessionData?.hotelMemberships[0]?.hotelId;
 
   const [notifications, setNotifications] = useState<NotificationSummary[] | null>(null);
-  const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<"any" | NotificationStatus>("any");
-  const [loadingMore, setLoadingMore] = useState(false);
+  const [cursor, setCursor] = useState<string | undefined>(undefined);
+  const [cursorStack, setCursorStack] = useState<(string | undefined)[]>([]);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [pageLoading, setPageLoading] = useState(false);
 
   useEffect(() => {
     if (!accessToken) return;
@@ -77,37 +82,39 @@ export default function NotificationsPage() {
     listNotifications(accessToken, {
       hotelId,
       status: statusFilter === "any" ? undefined : statusFilter,
+      cursor,
+      limit: PAGE_SIZE,
     })
-      .then(({ items, nextCursor: cursor }) => {
+      .then(({ items, nextCursor: next }) => {
         if (cancelled) return;
         setNotifications(items);
-        setNextCursor(cursor);
+        setNextCursor(next);
         setError(null);
+        setPageLoading(false);
       })
       .catch((err) => {
-        if (!cancelled) setError((err as Error).message);
+        if (cancelled) return;
+        setError((err as Error).message);
+        setPageLoading(false);
       });
     return () => {
       cancelled = true;
     };
-  }, [accessToken, hotelId, statusFilter]);
+  }, [accessToken, hotelId, statusFilter, cursor]);
 
-  async function loadMore() {
-    if (!accessToken || !nextCursor) return;
-    setLoadingMore(true);
-    try {
-      const { items, nextCursor: cursor } = await listNotifications(accessToken, {
-        hotelId,
-        status: statusFilter === "any" ? undefined : statusFilter,
-        cursor: nextCursor,
-      });
-      setNotifications((prev) => [...(prev ?? []), ...items]);
-      setNextCursor(cursor);
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setLoadingMore(false);
-    }
+  function goNext() {
+    if (!nextCursor) return;
+    setPageLoading(true);
+    setCursorStack((prev) => [...prev, cursor]);
+    setCursor(nextCursor);
+  }
+
+  function goPrev() {
+    if (cursorStack.length === 0) return;
+    setPageLoading(true);
+    const prevCursor = cursorStack[cursorStack.length - 1];
+    setCursorStack((prev) => prev.slice(0, -1));
+    setCursor(prevCursor);
   }
 
   async function markRead(id: string) {
@@ -133,7 +140,11 @@ export default function NotificationsPage() {
         Status
         <select
           value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value as "any" | NotificationStatus)}
+          onChange={(e) => {
+            setStatusFilter(e.target.value as "any" | NotificationStatus);
+            setCursor(undefined);
+            setCursorStack([]);
+          }}
           className={selectClass}
         >
           {STATUS_FILTERS.map((f) => (
@@ -211,17 +222,17 @@ export default function NotificationsPage() {
             );
           })
         )}
+        {notifications !== null && notifications.length > 0 && (
+          <Pagination
+            count={notifications.length}
+            hasPrev={cursorStack.length > 0}
+            hasNext={!!nextCursor}
+            loading={pageLoading}
+            onPrev={goPrev}
+            onNext={goNext}
+          />
+        )}
       </div>
-
-      {nextCursor && (
-        <button
-          onClick={() => void loadMore()}
-          disabled={loadingMore}
-          className="self-start rounded-lg border border-line px-5 py-2 text-sm font-medium text-ink transition-colors hover:bg-parchment disabled:opacity-50"
-        >
-          {loadingMore ? "Loading…" : "Load more"}
-        </button>
-      )}
     </div>
   );
 }
